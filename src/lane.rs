@@ -1,5 +1,6 @@
 #[macro_use] use gfx;
 
+use gfx::Factory as _;
 use nalgebra::Matrix4;
 use gfx::handle::Buffer;
 use gfx::VertexBuffer;
@@ -15,11 +16,13 @@ use piston_window::OpenGL;
 use piston_window::WindowSettings;
 use shader_version::Shaders;
 use shader_version::glsl::GLSL;
+use gfx::handle::ShaderResourceView;
 
 const vertex_shader: &str = r#"
     #version 330
 
     layout (location = 0) in vec3 vertex_pos;
+    out float texture_coord;
 
     uniform mat4 transform;
 
@@ -31,6 +34,8 @@ const vertex_shader: &str = r#"
             1.
         );
 
+        texture_coord = vertex_pos[0];
+
         gl_Position = transform * padded_vec;
     }
 "#;
@@ -38,12 +43,16 @@ const vertex_shader: &str = r#"
 const fragment_shader: &str = r#"
     #version 330
 
+    in float texture_coord;
     out vec4 color;
-
+    
     uniform mat4 transform;
+    uniform sampler1D raster_texture;
 
     void main() {
-       color = vec4(1.0f, 0.5f, 0.2f, 1.0f);
+        vec4 tex = texture(raster_texture, texture_coord);
+        //color = tex;
+        color = vec4(1., 1., 1., 0.);
     }
 "#;
 
@@ -56,7 +65,8 @@ gfx_pipeline!( lane_pipe {
     // the name must be the same as declared in the shaders
     transform: gfx::Global<[[f32; 4]; 4]> = "transform",
     
-    //t_color: gfx::TextureSampler<[f32; 4]> = "t_color",
+    // the name must be the same as declared in the shaders
+    texture: gfx::TextureSampler<[f32; 4]> = "raster_texture",
     //out_depth: gfx::DepthTarget<::gfx::format::DepthStencil> =
     //    gfx::preset::depth::LESS_EQUAL_WRITE,
 });
@@ -121,8 +131,192 @@ fn get_pipeline(
     }
 }
 
+fn generate_lane_texture(factory: &mut Factory) -> ShaderResourceView<Resources, [f32; 4]> {
+    const resolution: usize = 2048;
+
+    pub fn to_f(space: &[u8; 3]) -> [f32; 3] {
+        [
+            space[0] as f32 / 255.,
+            space[1] as f32 / 255.,
+            space[2] as f32 / 255.,
+        ]
+    }
+
+    pub fn blend(a: &[f32; 3], b: &[f32; 3], a_rate: f32) -> [f32; 3] {
+        fn proper_blend(a: f32, b: f32, a_rate: f32) -> f32 {
+            let sqrtable = a.powi(2) * a_rate + b.powi(2) * (1. - a_rate);
+
+            if sqrtable == 0. {
+                0.
+            }
+
+            else {
+                sqrtable.sqrt()
+            }
+        }
+
+        [
+            proper_blend(a[0], b[0], a_rate),
+            proper_blend(a[1], b[1], a_rate),
+            proper_blend(a[2], b[2], a_rate),
+        ]
+    }
+
+    pub fn fill(
+        texture: &mut [[f32; 3]; 2048],
+        color: &[u8; 3],
+        area: (f32, f32), // within [-1, 1]
+    ) {
+        let res_size = (resolution as f32).recip();
+        let color = to_f(color);
+
+        texture.iter_mut()
+            .enumerate()
+            .map(|(i, x)| (i as f32 * res_size * 2. - 1., x))
+            .for_each(|(i, tex)| {
+                if i < area.0 - res_size {
+                    return;
+                }
+
+                else if i > area.1 + res_size {
+                    return;
+                }
+
+                else {
+                    if i < area.0 && area.0 < i + res_size {
+                        // assume texture is A in blending
+                        let blend_amt = 1. - ((i - area.0) / res_size);
+                        *tex = blend(tex, &color, blend_amt);
+                    }
+
+                    else if i < area.1 && area.1 < i + res_size {
+                        // assume texture is A in blending
+                        let blend_amt = (i - area.1) / res_size;
+                        *tex = blend(tex, &color, blend_amt);
+                    }
+
+                    else {
+                        *tex = color.clone();
+                    }
+                }
+            })
+    }
+
+    let bt_fill = [0, 0, 0];
+    let left_fill = [1, 11, 20];
+    let right_fill = [22, 0, 3];
+
+    let bt_line = [176, 176, 176];
+    let bt_left_line = [15, 255, 243];
+    let bt_right_line = [248, 27, 132];
+
+    let left_line = [35, 142, 158];
+    let right_line = [176, 16, 86];
+
+    let bc_line = 0.;
+    let cd_line = (267 - 17) as f32 / (382 - 17) as f32;
+    let laser_bt_line = (337 - 17) as f32 / (382 - 17) as f32;
+    let edge_line = 1.;
+
+    let bt_line_thickness = 0.05;
+    let bt_laser_thickness = 0.15;
+    let edge_thickness = 0.075;
+
+    let mut texture = [[0.; 3]; resolution];
+    // fill the fills first
+    fill(&mut texture, &bt_fill, (-cd_line, cd_line));
+    fill(&mut texture, &left_fill, (-1., -cd_line));
+    fill(&mut texture, &right_fill, (cd_line, 1.));
+
+    // then the bt lines
+    fill(
+        &mut texture,
+        &bt_line,
+        (
+            -bt_line_thickness / 2.,
+            bt_line_thickness / 2.,
+        ),
+    );
+    fill(
+        &mut texture,
+        &bt_line,
+        (
+            cd_line - bt_line_thickness / 2.,
+            cd_line + bt_line_thickness / 2.,
+        ),
+    );
+    fill(
+        &mut texture,
+        &bt_line,
+        (
+            -cd_line - bt_line_thickness / 2.,
+            -cd_line + bt_line_thickness / 2.,
+        ),
+    );
+
+    // then the fx lines
+    fill(
+        &mut texture,
+        &bt_left_line,
+        (
+            -laser_bt_line + bt_laser_thickness / 2.,
+            -laser_bt_line - bt_laser_thickness / 2.,
+        ),
+    );
+    fill(
+        &mut texture,
+        &bt_right_line,
+        (
+            laser_bt_line + bt_laser_thickness / 2.,
+            laser_bt_line - bt_laser_thickness / 2.,
+        ),
+    );
+
+    // then the edge lines
+    fill(
+        &mut texture,
+        &left_line,
+        (
+            0.,
+            edge_thickness,
+        )
+    );
+
+    // then the edge lines
+    fill(
+        &mut texture,
+        &right_line,
+        (
+            1. - edge_thickness,
+            1.,
+        )
+    );
+
+    // convert the texture
+    let mut conv_texture = [[0u8; 4]; resolution];
+    conv_texture
+        .iter_mut()
+        .zip(texture.into_iter())
+        .for_each(|(to, from)| {
+            to[0] = (from[0] * 255.).round() as u8;
+            to[1] = (from[1] * 255.).round() as u8;
+            to[2] = (from[2] * 255.).round() as u8;
+            to[3] = 255;
+        });
+
+    // then generate the texture buffer
+    factory.create_texture_immutable::<gfx::format::Rgba8>(
+        gfx::texture::Kind::D1(resolution as u16),
+        gfx::texture::Mipmap::Provided,
+        &[&conv_texture]
+    )
+        .unwrap()
+        .1
+}
+
 pub struct LaneGraphics {
     vertex_buffer: Buffer<Resources, Vertex>,
+    texture_buffer: ShaderResourceView<Resources, [f32; 4]>,
     slice: Slice<Resources>,
 
     rotation: f32,
@@ -161,18 +355,14 @@ impl LaneGraphics {
             vert_order
         );
 
-        let transform = [
-            [1., 0., 0., 0.],
-            [0., 1.5, 0., 0.],
-            [0., 0., 1., 0.],
-            [0., 0., 0., 1.]
-        ];
+        let lane_texture = generate_lane_texture(factory);
 
         LaneGraphics {
             vertex_buffer: vbuf,
             slice,
+            texture_buffer: lane_texture,
 
-            rotation: 0.,
+            rotation: (60f32).to_radians(),
             slant: (30f32).to_radians(),
             zoom: 0.,
         }
@@ -207,6 +397,17 @@ impl LaneGraphics {
         factory: &mut Factory,
         glsl: GLSL
     ) {
+        use gfx::texture::SamplerInfo;
+        use gfx::texture::FilterMethod;
+        use gfx::texture::WrapMode;
+
+        // declare the sampler info
+        // usually, this would be passed into here
+        let sampler_info = SamplerInfo::new(
+            FilterMethod::Anisotropic(4),
+            WrapMode::Clamp,
+        );
+
         // get the transformation of the lane
         let mut transform = [[0.; 4]; 4];
         self.get_transformation()
@@ -222,6 +423,7 @@ impl LaneGraphics {
             vbuf: self.vertex_buffer.clone(),
             out_color: window.output_color.clone(),
             transform: transform,
+            texture: (self.texture_buffer.clone(), factory.create_sampler(sampler_info)),
         };
 
         window.encoder.draw(&self.slice, &*get_pipeline(factory, glsl), &data);
@@ -234,10 +436,12 @@ pub fn yeah() {
 
     // declare the window
     let mut window: PistonWindow =
-        WindowSettings::new("YAUSC Project", [1366, 768])
+        WindowSettings::new("YAUSC Project", [360, 360])
         .exit_on_esc(true)
         .samples(4)
         .opengl(opengl)
+        .vsync(true)
+        .srgb(true)
         .build()
         .expect("Failed to create Piston window");
 
@@ -251,7 +455,7 @@ pub fn yeah() {
     while let Some(e) = window.next() {
         window.draw_3d(&e, |mut window| {
             // clear the window
-            window.encoder.clear(&window.output_color, [0.2, 0.3, 0.3, 1.0]);
+            window.encoder.clear(&window.output_color, [0., 0., 0., 1.0]);
 
             lanes.render_to(&mut window, factory, glsl);
         });
