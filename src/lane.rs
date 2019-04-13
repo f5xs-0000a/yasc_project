@@ -380,12 +380,12 @@ impl LaneGraphics {
         // 4. Rotate using rotation
         // 5. Use perspective
 
-        Rotation3::from_euler_angles(self.rotation, 0., 0.)
+        Rotation3::from_euler_angles(0., 0., self.rotation)
             .matrix()
             .to_homogeneous() *
         Matrix4::new_translation(&Vector3::new(0., -1., 0.)) *
         Matrix4::new_scaling(self.zoom + 1.) *
-        Rotation3::from_euler_angles(0., self.slant, 0.)
+        Rotation3::from_euler_angles(self.slant, 0., 0.)
             .matrix()
             .to_homogeneous() *
         Matrix4::new_translation(&Vector3::new(0., 0.5, 0.))
@@ -428,9 +428,44 @@ impl LaneGraphics {
 
         window.encoder.draw(&self.slice, &*get_pipeline(factory, glsl), &data);
     }
+
+    pub fn adjust_rotation(&mut self, inc: bool) {
+        let increment_amt = (core::f32::consts::PI * 2.) / 180.;
+
+        if inc {
+            self.rotation += increment_amt;
+        }
+
+        else {
+            self.rotation -= increment_amt;
+        }
+    }
+
+    pub fn adjust_slant(&mut self, inc: bool) {
+        let increment_amt = (core::f32::consts::PI * 2.) / 180.;
+
+        if inc {
+            self.slant += increment_amt;
+        }
+
+        else {
+            self.slant -= increment_amt;
+        }
+    }
+
+    pub fn adjust_zoom(&mut self, inc: bool) {
+        // this does nothing as of the moment
+    }
 }
 
 pub fn yeah() {
+    use piston_window::Event as E;
+    use piston_window::Loop;
+    use piston_window::Input;
+    use piston_window::Button::Keyboard;
+    use piston_window::keyboard::Key as K;
+    use piston_window::ButtonState;
+
     // declare which version of opengl to use
     let opengl = OpenGL::V3_3;
 
@@ -453,11 +488,50 @@ pub fn yeah() {
     let mut lanes = LaneGraphics::new(factory, glsl, &window);
 
     while let Some(e) = window.next() {
-        window.draw_3d(&e, |mut window| {
-            // clear the window
-            window.encoder.clear(&window.output_color, [0., 0., 0., 1.0]);
+        match &e {
+            E::Input(b) => {
+                // take only the buttons
+                let b = match b {
+                    Input::Button(b) => b,
+                    _ => continue,
+                };
 
-            lanes.render_to(&mut window, factory, glsl);
-        });
+                if b.state != ButtonState::Press {
+                    continue;
+                }
+
+                // accept only the keyboard inputs
+                let key = match b.button {
+                    Keyboard(k) => k,
+                    _ => continue,
+                };
+
+                match key {
+                    K::R => lanes.adjust_rotation(true),
+                    K::F => lanes.adjust_rotation(false),
+                    K::E => lanes.adjust_slant(true),
+                    K::D => lanes.adjust_slant(false),
+                    K::W => lanes.adjust_zoom(true),
+                    K::S => lanes.adjust_zoom(false),
+                    _ => continue,
+                }
+            },
+
+            E::Loop(r) => {
+                match &r {
+                    Loop::Render(r) => {},
+                    _ => continue,
+                }
+
+                window.draw_3d(&e, |mut window| {
+                    // clear the window
+                    window.encoder.clear(&window.output_color, [0., 0., 0., 1.0]);
+
+                    lanes.render_to(&mut window, factory, glsl);
+                });
+            },
+
+            _ => {}
+        }
     }
 }
