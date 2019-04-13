@@ -1,0 +1,30 @@
+[package]
+name = "client"
+version = "0.1.0"
+authors = ["F5XS <f5xs.0000a@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+nalgebra = "*"
+parking_lot = "*"
+chrono = "*"
+lazy_static = "*"
+fnv = "*"
+tokio-threadpool = "*"
+piston = "*"
+gfx = "0.17.1" # align with piston_window's version
+gfx_device_gl = "0.15.5" # align with piston_window's version
+shader_version = "*"
+piston_window = "*"
+vecmath = "*"
+camera_controllers = "*"
+glfw = "*"
+gl = "*"
+
+[dependencies.viewport]
+git = "https://github.com/f5xs-0000a/viewport.git"
+branch = "master"
+
+[dependencies.sekibanki]
+git = "https://github.com/f5xs-0000a/sekibanki.git"
+branch = "master"
