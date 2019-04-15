@@ -1,5 +1,6 @@
 #[macro_use] use gfx;
 
+use image::GenericImageView;
 use gfx::Factory as _;
 use nalgebra::Matrix4;
 use gfx::handle::Buffer;
@@ -22,9 +23,11 @@ const vertex_shader: &str = r#"
     #version 330
 
     layout (location = 0) in vec3 vertex_pos;
-    out float texture_coord;
+    layout (location = 1) in float texture_coord;
 
     uniform mat4 transform;
+
+    out float into_frag_tex_coord;
 
     void main() {
         vec4 padded_vec = vec4(
@@ -34,7 +37,7 @@ const vertex_shader: &str = r#"
             1.
         );
 
-        texture_coord = vertex_pos[0];
+        into_frag_tex_coord = texture_coord;
 
         gl_Position = transform * padded_vec;
     }
@@ -43,16 +46,14 @@ const vertex_shader: &str = r#"
 const fragment_shader: &str = r#"
     #version 330
 
-    in float texture_coord;
+    in float into_frag_tex_coord;
     out vec4 color;
     
-    uniform mat4 transform;
     uniform sampler1D raster_texture;
 
     void main() {
-        vec4 tex = texture(raster_texture, texture_coord);
-        //color = tex;
-        color = vec4(1., 1., 1., 0.);
+        vec4 tex = texture(raster_texture, into_frag_tex_coord);
+        color = tex;
     }
 "#;
 
@@ -74,12 +75,14 @@ gfx_pipeline!( lane_pipe {
 gfx_vertex_struct!( Vertex {
     // the name must e the same as declared in the glslv file
     vertex_pos: [f32; 3] = "vertex_pos",
+    tex_coord: f32 = "texture_coord",
 });
 
 impl Vertex {
-    fn new(pos: [f32; 3]) -> Vertex {
+    fn new(vertex_pos: [f32; 3], tex_coord: f32) -> Vertex {
         Vertex {
-            vertex_pos: [pos[0], pos[1], pos[2]],
+            vertex_pos,
+            tex_coord,
         }
     }
 }
@@ -131,9 +134,7 @@ fn get_pipeline(
     }
 }
 
-fn generate_lane_texture(factory: &mut Factory) -> ShaderResourceView<Resources, [f32; 4]> {
-    const resolution: usize = 2048;
-
+/*
     pub fn to_f(space: &[u8; 3]) -> [f32; 3] {
         [
             space[0] as f32 / 255.,
@@ -163,7 +164,7 @@ fn generate_lane_texture(factory: &mut Factory) -> ShaderResourceView<Resources,
     }
 
     pub fn fill(
-        texture: &mut [[f32; 3]; 2048],
+        texture: &mut [[f32; 3]; resolution],
         color: &[u8; 3],
         area: (f32, f32), // within [-1, 1]
     ) {
@@ -174,28 +175,35 @@ fn generate_lane_texture(factory: &mut Factory) -> ShaderResourceView<Resources,
             .enumerate()
             .map(|(i, x)| (i as f32 * res_size * 2. - 1., x))
             .for_each(|(i, tex)| {
-                if i < area.0 - res_size {
+                if dbg!(i - res_size) < dbg!(area.0) {
+                    println!("no edit {}", i);
                     return;
                 }
 
-                else if i > area.1 + res_size {
+                // you got only up to here tho
+
+                else if area.1 + res_size < i {
+                    println!("no edit {}", i);
                     return;
                 }
 
                 else {
                     if i < area.0 && area.0 < i + res_size {
+                        println!("partial edit 1 {}", i);
                         // assume texture is A in blending
                         let blend_amt = 1. - ((i - area.0) / res_size);
                         *tex = blend(tex, &color, blend_amt);
                     }
 
                     else if i < area.1 && area.1 < i + res_size {
+                        println!("partial edit 2 {}", i);
                         // assume texture is A in blending
                         let blend_amt = (i - area.1) / res_size;
                         *tex = blend(tex, &color, blend_amt);
                     }
 
                     else {
+                        println!("full copy {}", i);
                         *tex = color.clone();
                     }
                 }
@@ -222,8 +230,15 @@ fn generate_lane_texture(factory: &mut Factory) -> ShaderResourceView<Resources,
     let bt_laser_thickness = 0.15;
     let edge_thickness = 0.075;
 
+    dbg!(&bc_line);
+    dbg!(&cd_line);
+    dbg!(&laser_bt_line);
+    dbg!(&edge_line);
+    dbg!(&bt_line_thickness);
+    dbg!(&bt_laser_thickness);
+    dbg!(&edge_thickness);
+
     let mut texture = [[0.; 3]; resolution];
-    // fill the fills first
     fill(&mut texture, &bt_fill, (-cd_line, cd_line));
     fill(&mut texture, &left_fill, (-1., -cd_line));
     fill(&mut texture, &right_fill, (cd_line, 1.));
@@ -254,6 +269,7 @@ fn generate_lane_texture(factory: &mut Factory) -> ShaderResourceView<Resources,
         ),
     );
 
+    /*
     // then the fx lines
     fill(
         &mut texture,
@@ -291,6 +307,7 @@ fn generate_lane_texture(factory: &mut Factory) -> ShaderResourceView<Resources,
             1.,
         )
     );
+    */
 
     // convert the texture
     let mut conv_texture = [[0u8; 4]; resolution];
@@ -305,11 +322,44 @@ fn generate_lane_texture(factory: &mut Factory) -> ShaderResourceView<Resources,
         });
 
     // then generate the texture buffer
-    factory.create_texture_immutable::<gfx::format::Rgba8>(
+    factory.create_texture_immutable::<gfx::format::Srgba8>(
         gfx::texture::Kind::D1(resolution as u16),
         gfx::texture::Mipmap::Provided,
         &[&conv_texture]
     )
+        .unwrap()
+        .1
+*/
+
+fn generate_lane_texture(factory: &mut Factory) -> ShaderResourceView<Resources, [f32; 4]> {
+    let image_bytes = include_bytes!("../build_assets/lane_texture.png");
+    let image = image::load_from_memory(image_bytes).unwrap();
+
+    let width = image.width() as u16;
+    // let height = image.height() as u16;
+
+    let data = image
+        .to_rgba()
+        .into_raw()
+        .chunks(4)
+        .map(|ch_iter| {
+            let mut vec = [0; 4];
+            vec.iter_mut()
+                .zip(ch_iter)
+                .for_each(|(mut to, from)| {
+                    *to = *from;
+                });
+
+            vec
+        })
+        .collect::<Vec<_>>();
+
+    factory
+        .create_texture_immutable::<gfx::format::Srgba8>(
+            gfx::texture::Kind::D1(width),
+            gfx::texture::Mipmap::Provided,
+            &[&*data],
+        )
         .unwrap()
         .1
 }
@@ -332,14 +382,14 @@ impl LaneGraphics {
     ) -> LaneGraphics {
         // declare the vertices of the square of the lanes
         let vertices = [
-            [-0.5, -0.5, 0.],
-            [ 0.5, -0.5, 0.],
-            [ 0.5,  0.5, 0.],
-            [-0.5,  0.5, 0.],
+            ([-0.5, -0.5, 0.], 0.),
+            ([ 0.5, -0.5, 0.], 1.),
+            ([ 0.5,  0.5, 0.], 1.),
+            ([-0.5,  0.5, 0.], 0.),
 
         ]
             .into_iter()
-            .map(|x| Vertex::new(*x))
+            .map(|(p, t)| Vertex::new(*p, *t))
             .collect::<Vec<_>>();
 
         // declare the ordering of indices how we're going to render the
@@ -362,7 +412,7 @@ impl LaneGraphics {
             slice,
             texture_buffer: lane_texture,
 
-            rotation: (60f32).to_radians(),
+            rotation: (0f32).to_radians(),
             slant: (30f32).to_radians(),
             zoom: 0.,
         }
@@ -380,6 +430,7 @@ impl LaneGraphics {
         // 4. Rotate using rotation
         // 5. Use perspective
 
+        // we still don't have perspective
         Rotation3::from_euler_angles(0., 0., self.rotation)
             .matrix()
             .to_homogeneous() *
@@ -414,7 +465,7 @@ impl LaneGraphics {
             .as_slice()
             .iter()
             .zip(transform.iter_mut().flat_map(|x| x.iter_mut()))
-            .for_each(|(from, mut to)| {
+            .for_each(|(from, to)| {
                 *to = *from;
             });
 

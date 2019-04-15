@@ -5,6 +5,7 @@ authors = ["F5XS <f5xs.0000a@gmail.com>"]
 edition = "2018"
 
 [dependencies]
+itertools = "*"
 nalgebra = "*"
 parking_lot = "*"
 chrono = "*"
@@ -17,9 +18,7 @@ gfx_device_gl = "0.15.5" # align with piston_window's version
 shader_version = "*"
 piston_window = "*"
 vecmath = "*"
-camera_controllers = "*"
-glfw = "*"
-gl = "*"
+image = "*"
 
 [dependencies.viewport]
 git = "https://github.com/f5xs-0000a/viewport.git"
