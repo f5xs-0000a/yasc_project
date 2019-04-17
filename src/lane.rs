@@ -1,5 +1,8 @@
 #[macro_use] use gfx;
 
+use piston_window::AdvancedWindow;
+use camera_controllers::FirstPerson;
+use camera_controllers::FirstPersonSettings;
 use image::GenericImageView;
 use gfx::Factory as _;
 use nalgebra::Matrix4;
@@ -134,203 +137,6 @@ fn get_pipeline(
     }
 }
 
-/*
-    pub fn to_f(space: &[u8; 3]) -> [f32; 3] {
-        [
-            space[0] as f32 / 255.,
-            space[1] as f32 / 255.,
-            space[2] as f32 / 255.,
-        ]
-    }
-
-    pub fn blend(a: &[f32; 3], b: &[f32; 3], a_rate: f32) -> [f32; 3] {
-        fn proper_blend(a: f32, b: f32, a_rate: f32) -> f32 {
-            let sqrtable = a.powi(2) * a_rate + b.powi(2) * (1. - a_rate);
-
-            if sqrtable == 0. {
-                0.
-            }
-
-            else {
-                sqrtable.sqrt()
-            }
-        }
-
-        [
-            proper_blend(a[0], b[0], a_rate),
-            proper_blend(a[1], b[1], a_rate),
-            proper_blend(a[2], b[2], a_rate),
-        ]
-    }
-
-    pub fn fill(
-        texture: &mut [[f32; 3]; resolution],
-        color: &[u8; 3],
-        area: (f32, f32), // within [-1, 1]
-    ) {
-        let res_size = (resolution as f32).recip();
-        let color = to_f(color);
-
-        texture.iter_mut()
-            .enumerate()
-            .map(|(i, x)| (i as f32 * res_size * 2. - 1., x))
-            .for_each(|(i, tex)| {
-                if dbg!(i - res_size) < dbg!(area.0) {
-                    println!("no edit {}", i);
-                    return;
-                }
-
-                // you got only up to here tho
-
-                else if area.1 + res_size < i {
-                    println!("no edit {}", i);
-                    return;
-                }
-
-                else {
-                    if i < area.0 && area.0 < i + res_size {
-                        println!("partial edit 1 {}", i);
-                        // assume texture is A in blending
-                        let blend_amt = 1. - ((i - area.0) / res_size);
-                        *tex = blend(tex, &color, blend_amt);
-                    }
-
-                    else if i < area.1 && area.1 < i + res_size {
-                        println!("partial edit 2 {}", i);
-                        // assume texture is A in blending
-                        let blend_amt = (i - area.1) / res_size;
-                        *tex = blend(tex, &color, blend_amt);
-                    }
-
-                    else {
-                        println!("full copy {}", i);
-                        *tex = color.clone();
-                    }
-                }
-            })
-    }
-
-    let bt_fill = [0, 0, 0];
-    let left_fill = [1, 11, 20];
-    let right_fill = [22, 0, 3];
-
-    let bt_line = [176, 176, 176];
-    let bt_left_line = [15, 255, 243];
-    let bt_right_line = [248, 27, 132];
-
-    let left_line = [35, 142, 158];
-    let right_line = [176, 16, 86];
-
-    let bc_line = 0.;
-    let cd_line = (267 - 17) as f32 / (382 - 17) as f32;
-    let laser_bt_line = (337 - 17) as f32 / (382 - 17) as f32;
-    let edge_line = 1.;
-
-    let bt_line_thickness = 0.05;
-    let bt_laser_thickness = 0.15;
-    let edge_thickness = 0.075;
-
-    dbg!(&bc_line);
-    dbg!(&cd_line);
-    dbg!(&laser_bt_line);
-    dbg!(&edge_line);
-    dbg!(&bt_line_thickness);
-    dbg!(&bt_laser_thickness);
-    dbg!(&edge_thickness);
-
-    let mut texture = [[0.; 3]; resolution];
-    fill(&mut texture, &bt_fill, (-cd_line, cd_line));
-    fill(&mut texture, &left_fill, (-1., -cd_line));
-    fill(&mut texture, &right_fill, (cd_line, 1.));
-
-    // then the bt lines
-    fill(
-        &mut texture,
-        &bt_line,
-        (
-            -bt_line_thickness / 2.,
-            bt_line_thickness / 2.,
-        ),
-    );
-    fill(
-        &mut texture,
-        &bt_line,
-        (
-            cd_line - bt_line_thickness / 2.,
-            cd_line + bt_line_thickness / 2.,
-        ),
-    );
-    fill(
-        &mut texture,
-        &bt_line,
-        (
-            -cd_line - bt_line_thickness / 2.,
-            -cd_line + bt_line_thickness / 2.,
-        ),
-    );
-
-    /*
-    // then the fx lines
-    fill(
-        &mut texture,
-        &bt_left_line,
-        (
-            -laser_bt_line + bt_laser_thickness / 2.,
-            -laser_bt_line - bt_laser_thickness / 2.,
-        ),
-    );
-    fill(
-        &mut texture,
-        &bt_right_line,
-        (
-            laser_bt_line + bt_laser_thickness / 2.,
-            laser_bt_line - bt_laser_thickness / 2.,
-        ),
-    );
-
-    // then the edge lines
-    fill(
-        &mut texture,
-        &left_line,
-        (
-            0.,
-            edge_thickness,
-        )
-    );
-
-    // then the edge lines
-    fill(
-        &mut texture,
-        &right_line,
-        (
-            1. - edge_thickness,
-            1.,
-        )
-    );
-    */
-
-    // convert the texture
-    let mut conv_texture = [[0u8; 4]; resolution];
-    conv_texture
-        .iter_mut()
-        .zip(texture.into_iter())
-        .for_each(|(to, from)| {
-            to[0] = (from[0] * 255.).round() as u8;
-            to[1] = (from[1] * 255.).round() as u8;
-            to[2] = (from[2] * 255.).round() as u8;
-            to[3] = 255;
-        });
-
-    // then generate the texture buffer
-    factory.create_texture_immutable::<gfx::format::Srgba8>(
-        gfx::texture::Kind::D1(resolution as u16),
-        gfx::texture::Mipmap::Provided,
-        &[&conv_texture]
-    )
-        .unwrap()
-        .1
-*/
-
 fn generate_lane_texture(factory: &mut Factory) -> ShaderResourceView<Resources, [f32; 4]> {
     let image_bytes = include_bytes!("../build_assets/lane_texture.png");
     let image = image::load_from_memory(image_bytes).unwrap();
@@ -373,6 +179,8 @@ pub struct LaneGraphics {
     slant: f32,
     zoom: f32,
     perspective_amount: f32,
+
+    first_person: FirstPerson,
 }
 
 impl LaneGraphics {
@@ -385,14 +193,16 @@ impl LaneGraphics {
         // front four, bl-br-tr-tl
         // back four, bl-br-tr-tl
         let vertices = [
-            ([-0.5, -0.5, 0.], 0.), // front bottom left
-            ([ 0.5, -0.5, 0.], 1.), // front bottom rgiht
-            ([ 0.5,  0.5, 0.], 1.), // front top right
-            ([-0.5,  0.5, 0.], 0.), // front top left
+            ([-1., -1., 0.], 0.), // front bottom left
+            ([ 1., -1., 0.], 1.), // front bottom rgiht
+            ([ 1.,  1., 0.], 1.), // front top right
+            ([-1.,  1., 0.], 0.), // front top left
+            /*
             ([-0.5, -0.5, 1.], 0.), // back bottom left
             ([ 0.5, -0.5, 1.], 1.), // back bottom right
             ([ 0.5,  0.5, 1.], 1.), // back top right
             ([-0.5,  0.5, 1.], 0.), // back top left
+            */
         ]
             .into_iter()
             .map(|(p, t)| Vertex::new(*p, *t))
@@ -426,12 +236,18 @@ impl LaneGraphics {
             slant: (30f32).to_radians(),
             zoom: 0.,
             perspective_amount: 0.,
+
+            first_person: FirstPerson::new(
+                [0., 0., 0.],
+                FirstPersonSettings::keyboard_wasd(),
+            ),
         }
     }
 
     pub fn get_transformation(&self) -> Matrix4<f32> {
         use nalgebra::geometry::{Transform, Rotation3, Perspective3, Isometry3};
         use nalgebra::base::Vector3;
+        use nalgebra::base::Vector4;
         use nalgebra::base::Matrix4;
         use nalgebra::geometry::Point3;
 
@@ -451,27 +267,40 @@ impl LaneGraphics {
         // 5. Use perspective
 
         let model = 
+            // rotate the lanes from a center point in the camera
             Rotation3::from_euler_angles(0., 0., self.rotation)
                 .matrix()
                 .to_homogeneous() *
-            Matrix4::new_translation(&Vector3::new(0., -1., 0.)) *
-            Matrix4::new_scaling(self.zoom + 1.) *
-            Rotation3::from_euler_angles(self.slant, 0., 0.)
+            
+            // move the lanes downward by 2 units
+            Matrix4::new_translation(&Vector3::new(0., -2., 0.)) *
+            //Matrix4::new_scaling(self.zoom + 1.) *
+            
+            // move the lanes away by a given constant
+            Matrix4::new_translation(&Vector3::new(0., 0., -3.6)) *
+
+            // slant the lanes
+            Rotation3::from_euler_angles(-self.slant, 0., 0.)
                 .matrix()
                 .to_homogeneous() *
-            Matrix4::new_translation(&Vector3::new(0., 0.5, 0.));
-    
-        let eye_pos = Point3::new(0., 0., 0.);
-        let view_direction = Point3::new(1., 0., 0.);
-        let view = Isometry3::look_at_rh(&eye_pos, &view_direction, &Vector3::y())
-            .to_homogeneous();
 
-        let projection = Perspective3::new(1., 60., 0.1, 1024.);
+            // increase the vertical length of the lanes
+            //Transform3::new_scaling(&Vector4::new(1., 2., 1., 1.)) *
+
+            // move upwards by 1 unit
+            Matrix4::new_translation(&Vector3::new(0., 1., 0.));
+    
+        let camera = self.first_person.camera(0.).orthogonal();
+        let mut converted = [0.; 16];
+        camera.iter().flat_map(|s| s.iter()).zip(converted.iter_mut())
+            .for_each(|(from, to)| *to = *from);
+        let view = Matrix4::from_column_slice(&converted);
+
+        let projection = Perspective3::new(1., (60f32).to_radians(), 0., 1.);
 
         let post_transform = mvp(&model, &view, projection.as_matrix());
 
-        model * (1. - self.perspective_amount) +
-        post_transform * (self.perspective_amount)
+        post_transform
     }
 
     pub fn render_to(
@@ -573,7 +402,7 @@ pub fn yeah() {
     let opengl = OpenGL::V3_3;
 
     // declare the window
-    let mut window: PistonWindow =
+    let mut window =
         WindowSettings::new("YAUSC Project", [360, 360])
         .exit_on_esc(true)
         .samples(4)
@@ -581,6 +410,7 @@ pub fn yeah() {
         .vsync(true)
         .srgb(true)
         .build()
+        .map(|w: PistonWindow| w.capture_cursor(true))
         .expect("Failed to create Piston window");
 
     // get the factory from the window. we'll be needing this.
@@ -591,8 +421,11 @@ pub fn yeah() {
     let mut lanes = LaneGraphics::new(factory, glsl, &window);
 
     while let Some(e) = window.next() {
+        lanes.first_person.event(&e);
+
         match &e {
             E::Input(b) => {
+
                 // take only the buttons
                 let b = match b {
                     Input::Button(b) => b,
@@ -609,15 +442,23 @@ pub fn yeah() {
                     _ => continue,
                 };
 
+                dbg!(&lanes.first_person.position);
+
                 match key {
-                    K::R => lanes.adjust_rotation(true),
-                    K::F => lanes.adjust_rotation(false),
-                    K::E => lanes.adjust_slant(true),
-                    K::D => lanes.adjust_slant(false),
-                    K::W => lanes.adjust_zoom(true),
-                    K::S => lanes.adjust_zoom(false),
-                    K::Q => lanes.adjust_persp(true),
-                    K::A => lanes.adjust_persp(false),
+                    K::O => lanes.adjust_rotation(true),
+                    K::L => lanes.adjust_rotation(false),
+                    K::I => lanes.adjust_slant(true),
+                    K::K => lanes.adjust_slant(false),
+                    K::U => lanes.adjust_zoom(true),
+                    K::J => lanes.adjust_zoom(false),
+                    K::Y => lanes.adjust_persp(true),
+                    K::H => lanes.adjust_persp(false),
+                    K::Return => {
+                        lanes.first_person = FirstPerson::new(
+                            [0., 0., 0.],
+                            FirstPersonSettings::keyboard_wasd(),
+                        );
+                    },
                     _ => continue,
                 }
 
