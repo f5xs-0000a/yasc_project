@@ -372,6 +372,7 @@ pub struct LaneGraphics {
     rotation: f32,
     slant: f32,
     zoom: f32,
+    perspective_amount: f32,
 }
 
 impl LaneGraphics {
@@ -381,12 +382,17 @@ impl LaneGraphics {
         window: &PistonWindow
     ) -> LaneGraphics {
         // declare the vertices of the square of the lanes
+        // front four, bl-br-tr-tl
+        // back four, bl-br-tr-tl
         let vertices = [
-            ([-0.5, -0.5, 0.], 0.),
-            ([ 0.5, -0.5, 0.], 1.),
-            ([ 0.5,  0.5, 0.], 1.),
-            ([-0.5,  0.5, 0.], 0.),
-
+            ([-0.5, -0.5, 0.], 0.), // front bottom left
+            ([ 0.5, -0.5, 0.], 1.), // front bottom rgiht
+            ([ 0.5,  0.5, 0.], 1.), // front top right
+            ([-0.5,  0.5, 0.], 0.), // front top left
+            ([-0.5, -0.5, 1.], 0.), // back bottom left
+            ([ 0.5, -0.5, 1.], 1.), // back bottom right
+            ([ 0.5,  0.5, 1.], 1.), // back top right
+            ([-0.5,  0.5, 1.], 0.), // back top left
         ]
             .into_iter()
             .map(|(p, t)| Vertex::new(*p, *t))
@@ -395,8 +401,12 @@ impl LaneGraphics {
         // declare the ordering of indices how we're going to render the
         // triangle
         let vert_order: &[u16] = &[
-            0, 1, 2,
-            2, 3, 0,
+            0, 1, 2, 2, 3, 0, // front
+            //3, 2, 7, 7, 8, 2, // top
+            //4, 0, 3, 3, 7, 4, // left
+            //1, 5, 6, 6, 2, 1, // right
+            //4, 5, 2, 2, 0, 4, // bottom
+            //7, 6, 5, 5, 4, 7, // back
         ];
 
         // create the vertex buffer
@@ -415,31 +425,53 @@ impl LaneGraphics {
             rotation: (0f32).to_radians(),
             slant: (30f32).to_radians(),
             zoom: 0.,
+            perspective_amount: 0.,
         }
     }
 
     pub fn get_transformation(&self) -> Matrix4<f32> {
-        use nalgebra::geometry::{Transform, Rotation3};
+        use nalgebra::geometry::{Transform, Rotation3, Perspective3, Isometry3};
         use nalgebra::base::Vector3;
         use nalgebra::base::Matrix4;
+        use nalgebra::geometry::Point3;
+
+        fn mvp(m: &Matrix4<f32>, v: &Matrix4<f32>, p: &Matrix4<f32>)
+        -> Matrix4<f32> {
+            p * (v * m)
+        }
+
+        // we only have three degrees of freedom on the transformation of the lanes:
+        // rotation (the spin), slant, and zoom
 
         // 1. Offset upwards by half unit
         // 2. Rotate using slant
-        // 5. Offset on z-axis (or just scale) using zoom
+        // 3. Offset on z-axis (or just scale) using zoom
         // 3. Offset downwards by one unit
         // 4. Rotate using rotation
         // 5. Use perspective
 
-        // we still don't have perspective
-        Rotation3::from_euler_angles(0., 0., self.rotation)
-            .matrix()
-            .to_homogeneous() *
-        Matrix4::new_translation(&Vector3::new(0., -1., 0.)) *
-        Matrix4::new_scaling(self.zoom + 1.) *
-        Rotation3::from_euler_angles(self.slant, 0., 0.)
-            .matrix()
-            .to_homogeneous() *
-        Matrix4::new_translation(&Vector3::new(0., 0.5, 0.))
+        let model = 
+            Rotation3::from_euler_angles(0., 0., self.rotation)
+                .matrix()
+                .to_homogeneous() *
+            Matrix4::new_translation(&Vector3::new(0., -1., 0.)) *
+            Matrix4::new_scaling(self.zoom + 1.) *
+            Rotation3::from_euler_angles(self.slant, 0., 0.)
+                .matrix()
+                .to_homogeneous() *
+            Matrix4::new_translation(&Vector3::new(0., 0.5, 0.));
+    
+        let eye_pos = Point3::new(0., 0., 0.);
+        let view_direction = Point3::new(1., 0., 0.);
+        let view = Isometry3::look_at_rh(&eye_pos, &view_direction, &Vector3::y())
+            .to_homogeneous();
+
+        let projection = Perspective3::new(1., 60., 0.1, 1024.);
+
+        let post_transform = mvp(&model, &view, projection.as_matrix());
+
+        model * (1. - self.perspective_amount) +
+        post_transform * (self.perspective_amount)
     }
 
     pub fn render_to(
@@ -504,8 +536,28 @@ impl LaneGraphics {
         }
     }
 
+    pub fn adjust_persp(&mut self, inc: bool) {
+        let increment_amt = 0.0078125;
+
+        if inc {
+            self.perspective_amount += increment_amt;
+        }
+
+        else {
+            self.perspective_amount -= increment_amt;
+        }
+    }
+
     pub fn adjust_zoom(&mut self, inc: bool) {
-        // this does nothing as of the moment
+        let increment_amt = 0.0078125;
+
+        if inc {
+            self.zoom += increment_amt;
+        }
+
+        else {
+            self.zoom -= increment_amt;
+        }
     }
 }
 
@@ -564,8 +616,15 @@ pub fn yeah() {
                     K::D => lanes.adjust_slant(false),
                     K::W => lanes.adjust_zoom(true),
                     K::S => lanes.adjust_zoom(false),
+                    K::Q => lanes.adjust_persp(true),
+                    K::A => lanes.adjust_persp(false),
                     _ => continue,
                 }
+
+                dbg!(lanes.rotation);
+                dbg!(lanes.slant);
+                dbg!(lanes.zoom);
+                dbg!(lanes.perspective_amount);
             },
 
             E::Loop(r) => {

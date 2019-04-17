@@ -20,6 +20,8 @@ piston_window = "*"
 vecmath = "*"
 image = "*"
 
+camera_controllers = "*"
+
 [dependencies.viewport]
 git = "https://github.com/f5xs-0000a/viewport.git"
 branch = "master"
