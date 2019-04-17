@@ -1,11 +1,12 @@
 #[macro_use] use gfx;
 
+use cgmath::Rotation3 as _;
+use cgmath::Matrix4;
 use piston_window::AdvancedWindow;
 use camera_controllers::FirstPerson;
 use camera_controllers::FirstPersonSettings;
 use image::GenericImageView;
 use gfx::Factory as _;
-use nalgebra::Matrix4;
 use gfx::handle::Buffer;
 use gfx::VertexBuffer;
 use std::sync::Arc;
@@ -178,7 +179,6 @@ pub struct LaneGraphics {
     rotation: f32,
     slant: f32,
     zoom: f32,
-    perspective_amount: f32,
 
     first_person: FirstPerson,
 }
@@ -235,7 +235,6 @@ impl LaneGraphics {
             rotation: (0f32).to_radians(),
             slant: (30f32).to_radians(),
             zoom: 0.,
-            perspective_amount: 0.,
 
             first_person: FirstPerson::new(
                 [0., 0., 0.],
@@ -245,11 +244,14 @@ impl LaneGraphics {
     }
 
     pub fn get_transformation(&self) -> Matrix4<f32> {
-        use nalgebra::geometry::{Transform, Rotation3, Perspective3, Isometry3};
-        use nalgebra::base::Vector3;
-        use nalgebra::base::Vector4;
-        use nalgebra::base::Matrix4;
-        use nalgebra::geometry::Point3;
+        use cgmath::{
+            Vector3,
+            Quaternion,
+            Vector4,
+            Deg,
+            Rad,
+            PerspectiveFov,
+        };
 
         fn mvp(m: &Matrix4<f32>, v: &Matrix4<f32>, p: &Matrix4<f32>)
         -> Matrix4<f32> {
@@ -266,39 +268,60 @@ impl LaneGraphics {
         // 4. Rotate using rotation
         // 5. Use perspective
 
+        const BACK_OFFSET: f32 = -3.6;
+        const VERT_SCALE: f32 = 3.;
+
         let model = 
-            // rotate the lanes from a center point in the camera
-            Rotation3::from_euler_angles(0., 0., self.rotation)
-                .matrix()
-                .to_homogeneous() *
-            
-            // move the lanes downward by 2 units
-            Matrix4::new_translation(&Vector3::new(0., -2., 0.)) *
-            //Matrix4::new_scaling(self.zoom + 1.) *
-            
             // move the lanes away by a given constant
-            Matrix4::new_translation(&Vector3::new(0., 0., -3.6)) *
+            Matrix4::from_translation(
+                Vector3::new(
+                    0.,
+                    0.,
+                    BACK_OFFSET * self.zoom.exp(),
+                )
+            ) *
 
             // slant the lanes
-            Rotation3::from_euler_angles(-self.slant, 0., 0.)
-                .matrix()
-                .to_homogeneous() *
+            Matrix4::from(
+                Quaternion::from_axis_angle(
+                    Vector3::new(1., 0., 0.),
+                    -Rad(self.slant),
+                )
+            ) *
 
             // increase the vertical length of the lanes
-            //Transform3::new_scaling(&Vector4::new(1., 2., 1., 1.)) *
+            Matrix4::from_nonuniform_scale(1., VERT_SCALE, 1.) *
 
             // move upwards by 1 unit
-            Matrix4::new_translation(&Vector3::new(0., 1., 0.));
+            Matrix4::from_translation(Vector3::new(0., 1., 0.));
     
         let camera = self.first_person.camera(0.).orthogonal();
         let mut converted = [0.; 16];
         camera.iter().flat_map(|s| s.iter()).zip(converted.iter_mut())
             .for_each(|(from, to)| *to = *from);
-        let view = Matrix4::from_column_slice(&converted);
+        let view = Matrix4::from(camera);
 
-        let projection = Perspective3::new(1., (60f32).to_radians(), 0., 1.);
+        let projection = Matrix4::from(
+                PerspectiveFov {
+                fovy: Rad::from(Deg(60.)),
+                aspect: 1.,
+                near: core::f32::MIN_POSITIVE,
+                far: 1.,
+            }
+        );
 
-        let post_transform = mvp(&model, &view, projection.as_matrix());
+        let post_transform = mvp(&model, &view, &projection);
+
+        // rotate the lanes from a center point in the camera
+        Matrix4::from(
+            Quaternion::from_axis_angle(
+                Vector3::new(0., 0., 1.),
+                Rad(self.rotation),
+            )
+        ) *
+
+        // move the lanes' view downwards
+        Matrix4::from_translation(Vector3::new(0., -0.975, 0.)) *
 
         post_transform
     }
@@ -320,21 +343,23 @@ impl LaneGraphics {
             WrapMode::Clamp,
         );
 
+        /*
         // get the transformation of the lane
         let mut transform = [[0.; 4]; 4];
         self.get_transformation()
-            .as_slice()
+            .into()
             .iter()
             .zip(transform.iter_mut().flat_map(|x| x.iter_mut()))
             .for_each(|(from, to)| {
                 *to = *from;
             });
+            */
 
         // declare the data for the pipeline
         let data = lane_pipe::Data {
             vbuf: self.vertex_buffer.clone(),
             out_color: window.output_color.clone(),
-            transform: transform,
+            transform: self.get_transformation().into(),
             texture: (self.texture_buffer.clone(), factory.create_sampler(sampler_info)),
         };
 
@@ -362,18 +387,6 @@ impl LaneGraphics {
 
         else {
             self.slant -= increment_amt;
-        }
-    }
-
-    pub fn adjust_persp(&mut self, inc: bool) {
-        let increment_amt = 0.0078125;
-
-        if inc {
-            self.perspective_amount += increment_amt;
-        }
-
-        else {
-            self.perspective_amount -= increment_amt;
         }
     }
 
@@ -451,8 +464,6 @@ pub fn yeah() {
                     K::K => lanes.adjust_slant(false),
                     K::U => lanes.adjust_zoom(true),
                     K::J => lanes.adjust_zoom(false),
-                    K::Y => lanes.adjust_persp(true),
-                    K::H => lanes.adjust_persp(false),
                     K::Return => {
                         lanes.first_person = FirstPerson::new(
                             [0., 0., 0.],
@@ -465,7 +476,6 @@ pub fn yeah() {
                 dbg!(lanes.rotation);
                 dbg!(lanes.slant);
                 dbg!(lanes.zoom);
-                dbg!(lanes.perspective_amount);
             },
 
             E::Loop(r) => {

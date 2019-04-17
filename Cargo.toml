@@ -6,7 +6,8 @@ edition = "2018"
 
 [dependencies]
 itertools = "*"
-nalgebra = "*"
+#nalgebra = "*"
+cgmath = "*"
 parking_lot = "*"
 chrono = "*"
 lazy_static = "*"
