@@ -1,5 +1,7 @@
 #[macro_use] use gfx;
 
+use cgmath::Deg;
+use cgmath::Rad;
 use cgmath::Rotation3 as _;
 use cgmath::Matrix4;
 use piston_window::AdvancedWindow;
@@ -26,7 +28,7 @@ use gfx::handle::ShaderResourceView;
 const vertex_shader: &str = r#"
     #version 330
 
-    layout (location = 0) in vec3 vertex_pos;
+    layout (location = 0) in vec2 vertex_pos;
     layout (location = 1) in float texture_coord;
 
     uniform mat4 transform;
@@ -35,9 +37,8 @@ const vertex_shader: &str = r#"
 
     void main() {
         vec4 padded_vec = vec4(
-            vertex_pos[0],
-            vertex_pos[1],
-            vertex_pos[2],
+            vertex_pos,
+            0.,
             1.
         );
 
@@ -78,12 +79,12 @@ gfx_pipeline!( lane_pipe {
 
 gfx_vertex_struct!( Vertex {
     // the name must e the same as declared in the glslv file
-    vertex_pos: [f32; 3] = "vertex_pos",
+    vertex_pos: [f32; 2] = "vertex_pos",
     tex_coord: f32 = "texture_coord",
 });
 
 impl Vertex {
-    fn new(vertex_pos: [f32; 3], tex_coord: f32) -> Vertex {
+    fn new(vertex_pos: [f32; 2], tex_coord: f32) -> Vertex {
         Vertex {
             vertex_pos,
             tex_coord,
@@ -138,7 +139,8 @@ fn get_pipeline(
     }
 }
 
-fn generate_lane_texture(factory: &mut Factory) -> ShaderResourceView<Resources, [f32; 4]> {
+fn generate_lane_texture(factory: &mut Factory)
+-> ShaderResourceView<Resources, [f32; 4]> {
     let image_bytes = include_bytes!("../build_assets/lane_texture.png");
     let image = image::load_from_memory(image_bytes).unwrap();
 
@@ -176,10 +178,10 @@ pub struct LaneGraphics {
     texture_buffer: ShaderResourceView<Resources, [f32; 4]>,
     slice: Slice<Resources>,
 
-    rotation: f32,
-    slant: f32,
+    rotation: Rad<f32>,
+    slant: Rad<f32>,
     zoom: f32,
-
+    
     first_person: FirstPerson,
 }
 
@@ -193,16 +195,10 @@ impl LaneGraphics {
         // front four, bl-br-tr-tl
         // back four, bl-br-tr-tl
         let vertices = [
-            ([-1., -1., 0.], 0.), // front bottom left
-            ([ 1., -1., 0.], 1.), // front bottom rgiht
-            ([ 1.,  1., 0.], 1.), // front top right
-            ([-1.,  1., 0.], 0.), // front top left
-            /*
-            ([-0.5, -0.5, 1.], 0.), // back bottom left
-            ([ 0.5, -0.5, 1.], 1.), // back bottom right
-            ([ 0.5,  0.5, 1.], 1.), // back top right
-            ([-0.5,  0.5, 1.], 0.), // back top left
-            */
+            ([-1., -1.], 0.), // front bottom left
+            ([ 1., -1.], 1.), // front bottom rgiht
+            ([ 1.,  1.], 1.), // front top right
+            ([-1.,  1.], 0.), // front top left
         ]
             .into_iter()
             .map(|(p, t)| Vertex::new(*p, *t))
@@ -210,14 +206,7 @@ impl LaneGraphics {
 
         // declare the ordering of indices how we're going to render the
         // triangle
-        let vert_order: &[u16] = &[
-            0, 1, 2, 2, 3, 0, // front
-            //3, 2, 7, 7, 8, 2, // top
-            //4, 0, 3, 3, 7, 4, // left
-            //1, 5, 6, 6, 2, 1, // right
-            //4, 5, 2, 2, 0, 4, // bottom
-            //7, 6, 5, 5, 4, 7, // back
-        ];
+        let vert_order: &[u16] = &[0, 1, 2, 2, 3, 0];
 
         // create the vertex buffer
         let (vbuf, slice) = factory.create_vertex_buffer_with_slice(
@@ -232,9 +221,14 @@ impl LaneGraphics {
             slice,
             texture_buffer: lane_texture,
 
-            rotation: (0f32).to_radians(),
-            slant: (30f32).to_radians(),
-            zoom: 0.,
+            rotation: Rad(0.),
+            slant: Rad::from(Deg(36.5)),
+            zoom: -0.9765625,
+
+            // if fov = 60
+            // slant = 52deg
+            // zoom = -0.4375
+            // len: 10.25
 
             first_person: FirstPerson::new(
                 [0., 0., 0.],
@@ -269,7 +263,7 @@ impl LaneGraphics {
         // 5. Use perspective
 
         const BACK_OFFSET: f32 = -3.6;
-        const VERT_SCALE: f32 = 3.;
+        const VERT_SCALE: f32 = 10.25;
 
         let model = 
             // move the lanes away by a given constant
@@ -285,12 +279,12 @@ impl LaneGraphics {
             Matrix4::from(
                 Quaternion::from_axis_angle(
                     Vector3::new(1., 0., 0.),
-                    -Rad(self.slant),
+                    -self.slant,
                 )
             ) *
 
             // increase the vertical length of the lanes
-            Matrix4::from_nonuniform_scale(1., VERT_SCALE, 1.) *
+            Matrix4::from_nonuniform_scale(1., self.length, 1.) *
 
             // move upwards by 1 unit
             Matrix4::from_translation(Vector3::new(0., 1., 0.));
@@ -303,7 +297,7 @@ impl LaneGraphics {
 
         let projection = Matrix4::from(
                 PerspectiveFov {
-                fovy: Rad::from(Deg(60.)),
+                fovy: Rad::from(Deg(90.)),
                 aspect: 1.,
                 near: core::f32::MIN_POSITIVE,
                 far: 1.,
@@ -316,7 +310,7 @@ impl LaneGraphics {
         Matrix4::from(
             Quaternion::from_axis_angle(
                 Vector3::new(0., 0., 1.),
-                Rad(self.rotation),
+                self.rotation,
             )
         ) *
 
@@ -370,23 +364,23 @@ impl LaneGraphics {
         let increment_amt = (core::f32::consts::PI * 2.) / 180.;
 
         if inc {
-            self.rotation += increment_amt;
+            self.rotation.0 += increment_amt;
         }
 
         else {
-            self.rotation -= increment_amt;
+            self.rotation.0 -= increment_amt;
         }
     }
 
     pub fn adjust_slant(&mut self, inc: bool) {
-        let increment_amt = (core::f32::consts::PI * 2.) / 180.;
+        let increment_amt = (core::f32::consts::PI) / 720.;
 
         if inc {
-            self.slant += increment_amt;
+            self.slant.0 += increment_amt;
         }
 
         else {
-            self.slant -= increment_amt;
+            self.slant.0 -= increment_amt;
         }
     }
 
@@ -423,7 +417,7 @@ pub fn yeah() {
         .vsync(true)
         .srgb(true)
         .build()
-        .map(|w: PistonWindow| w.capture_cursor(true))
+        .map(|w: PistonWindow| w) //w.capture_cursor(true))
         .expect("Failed to create Piston window");
 
     // get the factory from the window. we'll be needing this.
@@ -434,7 +428,7 @@ pub fn yeah() {
     let mut lanes = LaneGraphics::new(factory, glsl, &window);
 
     while let Some(e) = window.next() {
-        lanes.first_person.event(&e);
+        //lanes.first_person.event(&e);
 
         match &e {
             E::Input(b) => {
@@ -454,8 +448,6 @@ pub fn yeah() {
                     Keyboard(k) => k,
                     _ => continue,
                 };
-
-                dbg!(&lanes.first_person.position);
 
                 match key {
                     K::O => lanes.adjust_rotation(true),
