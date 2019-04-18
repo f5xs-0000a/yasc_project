@@ -1,32 +1,27 @@
 [package]
-name = "client"
-version = "0.1.0"
-authors = ["F5XS <f5xs.0000a@gmail.com>"]
-edition = "2018"
+    name = "client"
+    version = "0.1.0"
+    authors = ["F5XS <f5xs.0000a@gmail.com>"]
+    edition = "2018"
 
 [dependencies]
-itertools = "*"
-#nalgebra = "*"
-cgmath = "*"
-parking_lot = "*"
-chrono = "*"
-lazy_static = "*"
-fnv = "*"
-tokio-threadpool = "*"
-piston = "*"
-gfx = "0.17.1" # align with piston_window's version
-gfx_device_gl = "0.15.5" # align with piston_window's version
-shader_version = "*"
-piston_window = "*"
-vecmath = "*"
-image = "*"
+    itertools = "*"
+    parking_lot = "*"
+    lazy_static = "*"
 
-camera_controllers = "*"
+    fnv = "*"
+    chrono = "*"
 
-[dependencies.viewport]
-git = "https://github.com/f5xs-0000a/viewport.git"
-branch = "master"
+    tokio-threadpool = "*"
+    sekibanki = { git = "https://github.com/f5xs-0000a/sekibanki.git" }
 
-[dependencies.sekibanki]
-git = "https://github.com/f5xs-0000a/sekibanki.git"
-branch = "master"
+    cgmath = "*"
+    camera_controllers = "*"
+    viewport = { git = "https://github.com/f5xs-0000a/viewport.git" }
+
+    piston = "*"
+    gfx = "0.17.1" # align with piston_window's version
+    gfx_device_gl = "0.15.5" # align with piston_window's version
+    shader_version = "*"
+    piston_window = "*"
+    image = "*"

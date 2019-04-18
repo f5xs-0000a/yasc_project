@@ -20,7 +20,6 @@ use gfx::{
     Factory as _,
     PipelineState,
     Slice,
-    VertexBuffer,
 };
 use gfx_device_gl::{
     Factory,
@@ -29,7 +28,6 @@ use gfx_device_gl::{
 use image::GenericImageView;
 use parking_lot::RwLock;
 use piston_window::{
-    AdvancedWindow,
     OpenGL,
     PistonWindow,
     WindowSettings,
@@ -39,43 +37,6 @@ use shader_version::{
     Shaders,
 };
 use std::sync::Arc;
-
-const vertex_shader: &str = r#"
-    #version 330
-
-    layout (location = 0) in vec2 vertex_pos;
-    layout (location = 1) in float texture_coord;
-
-    uniform mat4 transform;
-
-    out float into_frag_tex_coord;
-
-    void main() {
-        vec4 padded_vec = vec4(
-            vertex_pos,
-            0.,
-            1.
-        );
-
-        into_frag_tex_coord = texture_coord;
-
-        gl_Position = transform * padded_vec;
-    }
-"#;
-
-const fragment_shader: &str = r#"
-    #version 330
-
-    in float into_frag_tex_coord;
-    out vec4 color;
-    
-    uniform sampler1D raster_texture;
-
-    void main() {
-        vec4 tex = texture(raster_texture, into_frag_tex_coord);
-        color = tex;
-    }
-"#;
 
 gfx_pipeline!( lane_pipe {
     vbuf: gfx::VertexBuffer<Vertex> = (),
@@ -138,12 +99,18 @@ fn get_pipeline(
                 factory
                     .create_pipeline_simple(
                         Shaders::new()
-                            .set(GLSL::V3_30, vertex_shader)
+                            .set(
+                                GLSL::V3_30,
+                                include_str!("shaders/lane.vert.glsl"),
+                            )
                             .get(glsl)
                             .unwrap()
                             .as_bytes(),
                         Shaders::new()
-                            .set(GLSL::V3_30, fragment_shader)
+                            .set(
+                                GLSL::V3_30,
+                                include_str!("shaders/lane.frag.glsl"),
+                            )
                             .get(glsl)
                             .unwrap()
                             .as_bytes(),
@@ -181,7 +148,7 @@ fn generate_lane_texture(
         .chunks(4)
         .map(|ch_iter| {
             let mut vec = [0; 4];
-            vec.iter_mut().zip(ch_iter).for_each(|(mut to, from)| {
+            vec.iter_mut().zip(ch_iter).for_each(|(to, from)| {
                 *to = *from;
             });
 
@@ -275,7 +242,6 @@ impl LaneGraphics {
             Quaternion,
             Rad,
             Vector3,
-            Vector4,
         };
 
         fn mvp(
@@ -514,7 +480,7 @@ pub fn yeah() {
 
             E::Loop(r) => {
                 match &r {
-                    Loop::Render(r) => {},
+                    Loop::Render(_) => {},
                     _ => continue,
                 }
 

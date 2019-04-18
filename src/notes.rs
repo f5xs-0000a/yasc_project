@@ -1,27 +1,14 @@
-use camera_controllers::{
-    FirstPerson,
-    FirstPersonSettings,
-};
-use cgmath::{
-    Deg,
-    Matrix4,
-    Rad,
-    Rotation3 as _,
-};
 use core::iter::repeat;
 use gfx::{
     self,
-    {
-        handle::{
-            Buffer,
-            ShaderResourceView,
-        },
-        traits::FactoryExt as _,
-        Factory as _,
-        PipelineState,
-        Slice,
-        VertexBuffer,
+    handle::{
+        Buffer,
+        ShaderResourceView,
     },
+    traits::FactoryExt as _,
+    Factory as _,
+    PipelineState,
+    Slice,
 };
 use gfx_device_gl::{
     Factory,
@@ -29,12 +16,7 @@ use gfx_device_gl::{
 };
 use image::GenericImageView;
 use parking_lot::RwLock;
-use piston_window::{
-    AdvancedWindow,
-    OpenGL,
-    PistonWindow,
-    WindowSettings,
-};
+use piston_window::PistonWindow;
 use shader_version::{
     glsl::GLSL,
     Shaders,
@@ -42,66 +24,6 @@ use shader_version::{
 use std::sync::Arc;
 
 ////////////////////////////////////////////////////////////////////////////////
-
-const vertex_shader: &str = r#"
-    #version 330
-
-    layout (location = 0) in vec2 note_pos;
-    layout (location = 1) in int note_index;
-    layout (location = 2) in int corner_type;
-
-    uniform float song_offset;
-    uniform float hi_speed;
-    uniform float note_graphic_height;
-    uniform mat4 transform;
-
-    out vec2 texture_coord;
-
-    void main() {
-        // determine the vertex' real center
-        vec2 cur_pos = note_pos;
-        cur_pos[1] = (cur_pos[1] - song_offset) * hi_speed;
-
-        vec2 new_note_pos;
-        switch (corner_type) {
-            case 0: // upper left
-                new_note_pos = cur_pos + vec2(-0.5, note_graphic_height);
-                texture_coord = vec2(0., 1.);
-                break;
-
-            case 1: // upper right
-                new_note_pos = cur_pos + vec2(0.5, note_graphic_height);
-                texture_coord = vec2(1., 1.);
-                break;
-
-            case 2: // lower left
-                new_note_pos = cur_pos + vec2(-0.5, 0.);
-                texture_coord = vec2(0., 0.);
-                break;
-
-            case 3: // lower right
-                new_note_pos = cur_pos + vec2(0.5, 0.);
-                texture_coord = vec2(1., 0.);
-                break;
-        }
-
-        gl_Position = transform * vec4(new_note_pos, 0., 1.);
-    }
-"#;
-
-const fragment_shader: &str = r#"
-    #version 330
-    
-    in vec2 texture_coord;
-    out vec4 color;
-    
-    uniform sampler2D raster_texture;
-
-    void main() {
-        vec4 tex = texture(raster_texture, texture_coord);
-        color = tex;
-    }
-"#;
 
 gfx_pipeline!( note_pipe {
     note_buffer: gfx::VertexBuffer<NoteLocation> = (),
@@ -115,8 +37,8 @@ gfx_pipeline!( note_pipe {
 });
 
 gfx_vertex_struct!(NoteLocation {
-    vertex_pos: [f32; 2] = "note_pos",
-    index:      i32 = "note_index",
+    vertex_pos:  [f32; 2] = "note_pos",
+    index:       i32 = "note_index",
     corner_type: i32 = "corner_type",
 });
 
@@ -130,11 +52,6 @@ fn get_pipeline(
     glsl: GLSL,
 ) -> Arc<PipelineState<Resources, note_pipe::Meta>>
 {
-    use gfx::{
-        state::Rasterizer,
-        Primitive,
-    };
-
     {
         // try reading the pipeline
         let lock = PIPELINE.read();
@@ -152,12 +69,18 @@ fn get_pipeline(
                 factory
                     .create_pipeline_simple(
                         Shaders::new()
-                            .set(GLSL::V3_30, vertex_shader)
+                            .set(
+                                GLSL::V3_30,
+                                include_str!("shaders/bt_chip_notes.vert.glsl"),
+                            )
                             .get(glsl)
                             .unwrap()
                             .as_bytes(),
                         Shaders::new()
-                            .set(GLSL::V3_30, fragment_shader)
+                            .set(
+                                GLSL::V3_30,
+                                include_str!("shaders/bt_chip_notes.frag.glsl"),
+                            )
                             .get(glsl)
                             .unwrap()
                             .as_bytes(),
@@ -197,7 +120,7 @@ fn generate_note_texture(
         .chunks(4)
         .map(|ch_iter| {
             let mut vec = [0; 4];
-            vec.iter_mut().zip(ch_iter).for_each(|(mut to, from)| {
+            vec.iter_mut().zip(ch_iter).for_each(|(to, from)| {
                 *to = *from;
             });
 
@@ -221,6 +144,9 @@ pub struct Notes {
     // the note texture should not be here since the game will play multiple
     // songs in a row, we don't want to be loading the same image every time
     // we play a new song
+    // 2019-04-18_19:00 on second thought, maybe we should put this here. we
+    // just have to ask the caller of new() to put a copy of the handle to the
+    // resource over here
     note_texture: ShaderResourceView<Resources, [f32; 4]>,
 }
 
@@ -256,7 +182,7 @@ impl Notes {
                 (0 .. 4).map(move |corner_type| {
                     NoteLocation {
                         vertex_pos: [x_pos, *y_pos],
-                        index:      idx as i32,
+                        index: idx as i32,
                         corner_type,
                     }
                 })
@@ -281,10 +207,13 @@ impl Notes {
         use gfx::IntoIndexBuffer as _;
 
         // TODO: it's not really (0..4). it's there for testing purposes
-        let indices = (0 .. 5).flat_map(|note_idx| {
-            [0u32, 1, 3, 3, 2, 0].into_iter()
-                .map(move |v_idx| v_idx + note_idx * 4)
-        }).collect::<Vec<_>>();
+        let indices = (0 .. 5)
+            .flat_map(|note_idx| {
+                [0u32, 1, 3, 3, 2, 0]
+                    .into_iter()
+                    .map(move |v_idx| v_idx + note_idx * 4)
+            })
+            .collect::<Vec<_>>();
         let len = indices.len() as u32;
 
         Slice {
@@ -329,7 +258,7 @@ impl Notes {
         let data = note_pipe::Data {
             note_buffer: self.note_buffer.clone(),
             transform,
-            out_color:   window.output_color.clone(),
+            out_color: window.output_color.clone(),
             hi_speed: 1.25,
             song_offset: 0.75,
             note_graphic_height: 0.03,
