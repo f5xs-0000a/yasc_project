@@ -134,7 +134,6 @@ fn get_pipeline(
         // it
         let mut lock = PIPELINE.write();
         if lock.is_none() {
-            // the pipeline should be inside a lazy static
             *lock = Some(Arc::new(
                 factory
                     .create_pipeline_simple(
@@ -264,7 +263,7 @@ impl LaneGraphics {
 
             notes: crate::notes::Notes::new(
                 factory,
-                [vec![0.25], vec![0.1, 0.2], vec![0.01], vec![0.22]],
+                [vec![0.25], vec![0.1, 0.2], vec![0.09], vec![0.22]],
             ),
         }
     }
