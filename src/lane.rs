@@ -1,29 +1,44 @@
-#[macro_use] use gfx;
+#[macro_use]
+use gfx;
 
-use cgmath::Deg;
-use cgmath::Rad;
-use cgmath::Rotation3 as _;
-use cgmath::Matrix4;
-use piston_window::AdvancedWindow;
-use camera_controllers::FirstPerson;
-use camera_controllers::FirstPersonSettings;
+use camera_controllers::{
+    FirstPerson,
+    FirstPersonSettings,
+};
+use cgmath::{
+    Deg,
+    Matrix4,
+    Rad,
+    Rotation3 as _,
+};
+use gfx::{
+    handle::{
+        Buffer,
+        ShaderResourceView,
+    },
+    traits::FactoryExt as _,
+    Factory as _,
+    PipelineState,
+    Slice,
+    VertexBuffer,
+};
+use gfx_device_gl::{
+    Factory,
+    Resources,
+};
 use image::GenericImageView;
-use gfx::Factory as _;
-use gfx::handle::Buffer;
-use gfx::VertexBuffer;
-use std::sync::Arc;
 use parking_lot::RwLock;
-use gfx::PipelineState;
-use gfx::Slice;
-use gfx_device_gl::Resources;
-use gfx_device_gl::Factory;
-use gfx::traits::FactoryExt as _;
-use piston_window::PistonWindow;
-use piston_window::OpenGL;
-use piston_window::WindowSettings;
-use shader_version::Shaders;
-use shader_version::glsl::GLSL;
-use gfx::handle::ShaderResourceView;
+use piston_window::{
+    AdvancedWindow,
+    OpenGL,
+    PistonWindow,
+    WindowSettings,
+};
+use shader_version::{
+    glsl::GLSL,
+    Shaders,
+};
+use std::sync::Arc;
 
 const vertex_shader: &str = r#"
     #version 330
@@ -77,14 +92,18 @@ gfx_pipeline!( lane_pipe {
     //    gfx::preset::depth::LESS_EQUAL_WRITE,
 });
 
-gfx_vertex_struct!( Vertex {
+gfx_vertex_struct!(Vertex {
     // the name must e the same as declared in the glslv file
     vertex_pos: [f32; 2] = "vertex_pos",
-    tex_coord: f32 = "texture_coord",
+    tex_coord:  f32 = "texture_coord",
 });
 
 impl Vertex {
-    fn new(vertex_pos: [f32; 2], tex_coord: f32) -> Vertex {
+    fn new(
+        vertex_pos: [f32; 2],
+        tex_coord: f32,
+    ) -> Vertex
+    {
         Vertex {
             vertex_pos,
             tex_coord,
@@ -93,54 +112,64 @@ impl Vertex {
 }
 
 lazy_static! {
-    static ref PIPELINE
-    : RwLock<Option<Arc<PipelineState<Resources, lane_pipe::Meta>>>>
-    = RwLock::new(None);
+    static ref PIPELINE: RwLock<Option<Arc<PipelineState<Resources, lane_pipe::Meta>>>> =
+        RwLock::new(None);
 }
 
 fn get_pipeline(
     factory: &mut Factory,
-    glsl: GLSL
-) -> Arc<PipelineState<Resources, lane_pipe::Meta>> {
-    { // try reading the pipeline
+    glsl: GLSL,
+) -> Arc<PipelineState<Resources, lane_pipe::Meta>>
+{
+    {
+        // try reading the pipeline
         let lock = PIPELINE.read();
         if let Some(ps) = (*lock).clone() {
             return ps;
         }
     }
 
-    { // try to acquire a write lock on the pipeline so we can put a value in it
+    {
+        // try to acquire a write lock on the pipeline so we can put a value in
+        // it
         let mut lock = PIPELINE.write();
         if lock.is_none() {
             // the pipeline should be inside a lazy static
             *lock = Some(Arc::new(
-                factory.create_pipeline_simple(
-                    Shaders::new()
-                        .set(GLSL::V3_30, vertex_shader)
-                        .get(glsl).unwrap().as_bytes(),
-                    Shaders::new()
-                        .set(GLSL::V3_30, fragment_shader)
-                        .get(glsl).unwrap().as_bytes(),
-                    lane_pipe::new()
-                ).unwrap()
+                factory
+                    .create_pipeline_simple(
+                        Shaders::new()
+                            .set(GLSL::V3_30, vertex_shader)
+                            .get(glsl)
+                            .unwrap()
+                            .as_bytes(),
+                        Shaders::new()
+                            .set(GLSL::V3_30, fragment_shader)
+                            .get(glsl)
+                            .unwrap()
+                            .as_bytes(),
+                        lane_pipe::new(),
+                    )
+                    .unwrap(),
             ));
         }
     };
 
-    { // read the pipeline again. for sure, it has a value now.
+    {
+        // read the pipeline again. for sure, it has a value now.
         let lock = PIPELINE.read();
         if let Some(ps) = (*lock).clone() {
             return ps;
         }
-
         else {
             unreachable!()
         }
     }
 }
 
-fn generate_lane_texture(factory: &mut Factory)
--> ShaderResourceView<Resources, [f32; 4]> {
+fn generate_lane_texture(
+    factory: &mut Factory
+) -> ShaderResourceView<Resources, [f32; 4]> {
     let image_bytes = include_bytes!("../build_assets/lane_texture.png");
     let image = image::load_from_memory(image_bytes).unwrap();
 
@@ -153,11 +182,9 @@ fn generate_lane_texture(factory: &mut Factory)
         .chunks(4)
         .map(|ch_iter| {
             let mut vec = [0; 4];
-            vec.iter_mut()
-                .zip(ch_iter)
-                .for_each(|(mut to, from)| {
-                    *to = *from;
-                });
+            vec.iter_mut().zip(ch_iter).for_each(|(mut to, from)| {
+                *to = *from;
+            });
 
             vec
         })
@@ -179,9 +206,9 @@ pub struct LaneGraphics {
     slice: Slice<Resources>,
 
     rotation: Rad<f32>,
-    slant: Rad<f32>,
-    zoom: f32,
-    
+    slant:    Rad<f32>,
+    zoom:     f32,
+
     first_person: FirstPerson,
 
     notes: crate::notes::Notes,
@@ -191,30 +218,29 @@ impl LaneGraphics {
     pub fn new(
         factory: &mut Factory,
         glsl: GLSL,
-        window: &PistonWindow
-    ) -> LaneGraphics {
+        window: &PistonWindow,
+    ) -> LaneGraphics
+    {
         // declare the vertices of the square of the lanes
         // front four, bl-br-tr-tl
         // back four, bl-br-tr-tl
         let vertices = [
             ([-1., -1.], 0.), // front bottom left
-            ([ 1., -1.], 1.), // front bottom rgiht
-            ([ 1.,  1.], 1.), // front top right
-            ([-1.,  1.], 0.), // front top left
+            ([1., -1.], 1.),  // front bottom rgiht
+            ([1., 1.], 1.),   // front top right
+            ([-1., 1.], 0.),  // front top left
         ]
-            .into_iter()
-            .map(|(p, t)| Vertex::new(*p, *t))
-            .collect::<Vec<_>>();
+        .into_iter()
+        .map(|(p, t)| Vertex::new(*p, *t))
+        .collect::<Vec<_>>();
 
         // declare the ordering of indices how we're going to render the
         // triangle
         let vert_order: &[u16] = &[0, 1, 2, 2, 3, 0];
 
         // create the vertex buffer
-        let (vbuf, slice) = factory.create_vertex_buffer_with_slice(
-            &vertices,
-            vert_order
-        );
+        let (vbuf, slice) =
+            factory.create_vertex_buffer_with_slice(&vertices, vert_order);
 
         let lane_texture = generate_lane_texture(factory);
 
@@ -231,7 +257,6 @@ impl LaneGraphics {
             // slant = 52deg
             // zoom = -0.4375
             // len: 10.25
-
             first_person: FirstPerson::new(
                 [0., 0., 0.],
                 FirstPersonSettings::keyboard_wasd(),
@@ -246,21 +271,25 @@ impl LaneGraphics {
 
     pub fn get_transformation(&self) -> Matrix4<f32> {
         use cgmath::{
-            Vector3,
-            Quaternion,
-            Vector4,
             Deg,
-            Rad,
             PerspectiveFov,
+            Quaternion,
+            Rad,
+            Vector3,
+            Vector4,
         };
 
-        fn mvp(m: &Matrix4<f32>, v: &Matrix4<f32>, p: &Matrix4<f32>)
-        -> Matrix4<f32> {
+        fn mvp(
+            m: &Matrix4<f32>,
+            v: &Matrix4<f32>,
+            p: &Matrix4<f32>,
+        ) -> Matrix4<f32>
+        {
             p * (v * m)
         }
 
-        // we only have three degrees of freedom on the transformation of the lanes:
-        // rotation (the spin), slant, and zoom
+        // we only have three degrees of freedom on the transformation of the
+        // lanes: rotation (the spin), slant, and zoom
 
         // 1. Offset upwards by half unit
         // 2. Rotate using slant
@@ -295,21 +324,22 @@ impl LaneGraphics {
 
             // move upwards by 1 unit
             Matrix4::from_translation(Vector3::new(0., 1., 0.));
-    
+
         let camera = self.first_person.camera(0.).orthogonal();
         let mut converted = [0.; 16];
-        camera.iter().flat_map(|s| s.iter()).zip(converted.iter_mut())
+        camera
+            .iter()
+            .flat_map(|s| s.iter())
+            .zip(converted.iter_mut())
             .for_each(|(from, to)| *to = *from);
         let view = Matrix4::from(camera);
 
-        let projection = Matrix4::from(
-                PerspectiveFov {
-                fovy: Rad::from(Deg(90.)),
-                aspect: 1.,
-                near: core::f32::MIN_POSITIVE,
-                far: 1.,
-            }
-        );
+        let projection = Matrix4::from(PerspectiveFov {
+            fovy:   Rad::from(Deg(90.)),
+            aspect: 1.,
+            near:   core::f32::MIN_POSITIVE,
+            far:    1.,
+        });
 
         let post_transform = mvp(&model, &view, &projection);
 
@@ -332,26 +362,30 @@ impl LaneGraphics {
         window: &mut PistonWindow,
         factory: &mut Factory,
         glsl: GLSL,
-    ) {
-        use gfx::texture::SamplerInfo;
-        use gfx::texture::FilterMethod;
-        use gfx::texture::WrapMode;
+    )
+    {
+        use gfx::texture::{
+            FilterMethod,
+            SamplerInfo,
+            WrapMode,
+        };
 
         // declare the sampler info
         // usually, this would be passed into here
-        let sampler_info = SamplerInfo::new(
-            FilterMethod::Anisotropic(4),
-            WrapMode::Clamp,
-        );
-        
+        let sampler_info =
+            SamplerInfo::new(FilterMethod::Anisotropic(4), WrapMode::Clamp);
+
         let transform = self.get_transformation();
 
         // declare the data for the pipeline
         let data = lane_pipe::Data {
-            vbuf: self.vertex_buffer.clone(),
+            vbuf:      self.vertex_buffer.clone(),
             out_color: window.output_color.clone(),
             transform: transform.clone().into(),
-            texture: (self.texture_buffer.clone(), factory.create_sampler(sampler_info)),
+            texture:   (
+                self.texture_buffer.clone(),
+                factory.create_sampler(sampler_info),
+            ),
         };
 
         window.encoder.draw(&self.slice, &*get_pipeline(factory, glsl), &data);
@@ -360,37 +394,46 @@ impl LaneGraphics {
         self.notes.render_to(window, factory, glsl, 200., 0., transform.into());
     }
 
-    pub fn adjust_rotation(&mut self, inc: bool) {
+    pub fn adjust_rotation(
+        &mut self,
+        inc: bool,
+    )
+    {
         let increment_amt = (core::f32::consts::PI * 2.) / 180.;
 
         if inc {
             self.rotation.0 += increment_amt;
         }
-
         else {
             self.rotation.0 -= increment_amt;
         }
     }
 
-    pub fn adjust_slant(&mut self, inc: bool) {
+    pub fn adjust_slant(
+        &mut self,
+        inc: bool,
+    )
+    {
         let increment_amt = (core::f32::consts::PI) / 720.;
 
         if inc {
             self.slant.0 += increment_amt;
         }
-
         else {
             self.slant.0 -= increment_amt;
         }
     }
 
-    pub fn adjust_zoom(&mut self, inc: bool) {
+    pub fn adjust_zoom(
+        &mut self,
+        inc: bool,
+    )
+    {
         let increment_amt = 0.0078125;
 
         if inc {
             self.zoom += increment_amt;
         }
-
         else {
             self.zoom -= increment_amt;
         }
@@ -398,19 +441,20 @@ impl LaneGraphics {
 }
 
 pub fn yeah() {
-    use piston_window::Event as E;
-    use piston_window::Loop;
-    use piston_window::Input;
-    use piston_window::Button::Keyboard;
-    use piston_window::keyboard::Key as K;
-    use piston_window::ButtonState;
+    use piston_window::{
+        keyboard::Key as K,
+        Button::Keyboard,
+        ButtonState,
+        Event as E,
+        Input,
+        Loop,
+    };
 
     // declare which version of opengl to use
     let opengl = OpenGL::V3_3;
 
     // declare the window
-    let mut window =
-        WindowSettings::new("YAUSC Project", [360, 360])
+    let mut window = WindowSettings::new("YAUSC Project", [360, 360])
         .exit_on_esc(true)
         .samples(4)
         .opengl(opengl)
@@ -432,7 +476,6 @@ pub fn yeah() {
 
         match &e {
             E::Input(b) => {
-
                 // take only the buttons
                 let b = match b {
                     Input::Button(b) => b,
@@ -478,13 +521,15 @@ pub fn yeah() {
 
                 window.draw_3d(&e, |mut window| {
                     // clear the window
-                    window.encoder.clear(&window.output_color, [0., 0., 0., 1.0]);
+                    window
+                        .encoder
+                        .clear(&window.output_color, [0., 0., 0., 1.0]);
 
                     lanes.render_to(&mut window, factory, glsl);
                 });
             },
 
-            _ => {}
+            _ => {},
         }
     }
 }

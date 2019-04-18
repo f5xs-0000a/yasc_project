@@ -1,29 +1,45 @@
+use camera_controllers::{
+    FirstPerson,
+    FirstPersonSettings,
+};
+use cgmath::{
+    Deg,
+    Matrix4,
+    Rad,
+    Rotation3 as _,
+};
 use core::iter::repeat;
-use cgmath::Deg;
-use cgmath::Rad;
-use cgmath::Rotation3 as _;
-use cgmath::Matrix4;
-use piston_window::AdvancedWindow;
-use camera_controllers::FirstPerson;
-use camera_controllers::FirstPersonSettings;
+use gfx::{
+    self,
+    {
+        handle::{
+            Buffer,
+            ShaderResourceView,
+        },
+        traits::FactoryExt as _,
+        Factory as _,
+        PipelineState,
+        Slice,
+        VertexBuffer,
+    },
+};
+use gfx_device_gl::{
+    Factory,
+    Resources,
+};
 use image::GenericImageView;
-use gfx::Factory as _;
-use gfx::handle::Buffer;
-use gfx::VertexBuffer;
-use std::sync::Arc;
 use parking_lot::RwLock;
-use gfx::PipelineState;
-use gfx::Slice;
-use gfx_device_gl::Resources;
-use gfx_device_gl::Factory;
-use gfx::traits::FactoryExt as _;
-use piston_window::PistonWindow;
-use piston_window::OpenGL;
-use piston_window::WindowSettings;
-use shader_version::Shaders;
-use shader_version::glsl::GLSL;
-use gfx::handle::ShaderResourceView;
-use gfx;
+use piston_window::{
+    AdvancedWindow,
+    OpenGL,
+    PistonWindow,
+    WindowSettings,
+};
+use shader_version::{
+    glsl::GLSL,
+    Shaders,
+};
+use std::sync::Arc;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -148,73 +164,89 @@ gfx_pipeline!( note_pipe {
     note_graphic_height: gfx::Global<f32> = "note_graphic_height",
 });
 
-gfx_vertex_struct!( NoteLocation {
+gfx_vertex_struct!(NoteLocation {
     vertex_pos: [f32; 2] = "vertex_pos",
-    index: u32 = "note_index",
+    index:      u32 = "note_index",
 });
 
 lazy_static! {
-    static ref PIPELINE
-    : RwLock<Option<Arc<PipelineState<Resources, note_pipe::Meta>>>>
-    = RwLock::new(None);
+    static ref PIPELINE: RwLock<Option<Arc<PipelineState<Resources, note_pipe::Meta>>>> =
+        RwLock::new(None);
 }
 
 fn get_pipeline(
     factory: &mut Factory,
-    glsl: GLSL
-) -> Arc<PipelineState<Resources, note_pipe::Meta>> {
-    use gfx::state::Rasterizer;
-    use gfx::Primitive;
+    glsl: GLSL,
+) -> Arc<PipelineState<Resources, note_pipe::Meta>>
+{
+    use gfx::{
+        state::Rasterizer,
+        Primitive,
+    };
 
-    { // try reading the pipeline
+    {
+        // try reading the pipeline
         let lock = PIPELINE.read();
         if let Some(ps) = (*lock).clone() {
             return ps;
         }
     }
 
-    { // try to acquire a write lock on the pipeline so we can put a value in it
+    {
+        // try to acquire a write lock on the pipeline so we can put a value in
+        // it
         let mut lock = PIPELINE.write();
         if lock.is_none() {
             let rasterizer = Rasterizer::new_fill();
             let prim_type = Primitive::TriangleList;
-            let shader_set = factory.create_shader_set_geometry(
-                Shaders::new()
-                    .set(GLSL::V3_30, vertex_shader)
-                    .get(glsl).unwrap().as_bytes(),
-                Shaders::new()
-                    .set(GLSL::V3_30, geometry_shader)
-                    .get(glsl).unwrap().as_bytes(),
-                Shaders::new()
-                    .set(GLSL::V3_30, fragment_shader)
-                    .get(glsl).unwrap().as_bytes(),
-            ).unwrap();
-            
+            let shader_set = factory
+                .create_shader_set_geometry(
+                    Shaders::new()
+                        .set(GLSL::V3_30, vertex_shader)
+                        .get(glsl)
+                        .unwrap()
+                        .as_bytes(),
+                    Shaders::new()
+                        .set(GLSL::V3_30, geometry_shader)
+                        .get(glsl)
+                        .unwrap()
+                        .as_bytes(),
+                    Shaders::new()
+                        .set(GLSL::V3_30, fragment_shader)
+                        .get(glsl)
+                        .unwrap()
+                        .as_bytes(),
+                )
+                .unwrap();
+
             *lock = Some(Arc::new(
-                factory.create_pipeline_state(
-                    &shader_set,
-                    prim_type,
-                    rasterizer,
-                    note_pipe::new(),
-                ).unwrap()
+                factory
+                    .create_pipeline_state(
+                        &shader_set,
+                        prim_type,
+                        rasterizer,
+                        note_pipe::new(),
+                    )
+                    .unwrap(),
             ));
         }
     };
 
-    { // read the pipeline again. for sure, it has a value now.
+    {
+        // read the pipeline again. for sure, it has a value now.
         let lock = PIPELINE.read();
         if let Some(ps) = (*lock).clone() {
             return ps;
         }
-
         else {
             unreachable!()
         }
     }
 }
 
-fn generate_note_texture(factory: &mut Factory)
--> ShaderResourceView<Resources, [f32; 4]> {
+fn generate_note_texture(
+    factory: &mut Factory
+) -> ShaderResourceView<Resources, [f32; 4]> {
     use gfx::texture::AaMode;
 
     let image_bytes = include_bytes!("../build_assets/note.png");
@@ -229,11 +261,9 @@ fn generate_note_texture(factory: &mut Factory)
         .chunks(4)
         .map(|ch_iter| {
             let mut vec = [0; 4];
-            vec.iter_mut()
-                .zip(ch_iter)
-                .for_each(|(mut to, from)| {
-                    *to = *from;
-                });
+            vec.iter_mut().zip(ch_iter).for_each(|(mut to, from)| {
+                *to = *from;
+            });
 
             vec
         })
@@ -262,13 +292,16 @@ impl Notes {
     pub fn new(
         factory: &mut Factory,
         notes: [Vec<f32>; 4],
-    ) -> Notes {
+    ) -> Notes
+    {
         // collect the notes' positions
         let mut reordered_notes = notes
             .into_iter()
             .enumerate()
             .flat_map(|(pos, vec)| {
-                let x_pos = crate::utils::linear_map(pos as f64, 0., 4., -1.5, 1.5) as f32;
+                let x_pos =
+                    crate::utils::linear_map(pos as f64, 0., 4., -1.5, 1.5)
+                        as f32;
                 repeat(x_pos).zip(vec.into_iter())
             })
             .collect::<Vec<_>>();
@@ -283,9 +316,11 @@ impl Notes {
         let vertices = reordered_notes
             .into_iter()
             .enumerate()
-            .map(|(idx, (x_pos, y_pos))| NoteLocation {
-                vertex_pos: [x_pos, *y_pos],
-                index: idx as u32,
+            .map(|(idx, (x_pos, y_pos))| {
+                NoteLocation {
+                    vertex_pos: [x_pos, *y_pos],
+                    index:      idx as u32,
+                }
             })
             .collect::<Vec<_>>();
 
@@ -302,7 +337,8 @@ impl Notes {
         factory: &mut Factory,
         hi_speed: f32,
         song_offset: f32,
-    ) -> Slice<Resources> {
+    ) -> Slice<Resources>
+    {
         use gfx::IntoIndexBuffer as _;
 
         // TODO: it's not really 0 1 2 3 4. it's there for testing purposes
@@ -310,11 +346,11 @@ impl Notes {
         let len = idxbuf.len();
 
         Slice {
-            start: 0u32,
-            end: idxbuf.len() as u32,
+            start:       0u32,
+            end:         idxbuf.len() as u32,
             base_vertex: 0,
-            instances: None,
-            buffer: idxbuf.into_index_buffer(factory)
+            instances:   None,
+            buffer:      idxbuf.into_index_buffer(factory),
         }
     }
 
@@ -327,40 +363,41 @@ impl Notes {
         hi_speed: f32,
         offset: f32,
         transform: [[f32; 4]; 4],
-    ) {
-        
-        use gfx::texture::SamplerInfo;
-        use gfx::texture::FilterMethod;
-        use gfx::texture::WrapMode;
+    )
+    {
+        use gfx::texture::{
+            FilterMethod,
+            SamplerInfo,
+            WrapMode,
+        };
 
         // declare the sampler info
         // usually, this would be passed into here
-        let sampler_info = SamplerInfo::new(
-            FilterMethod::Anisotropic(4),
-            WrapMode::Clamp,
-        );
+        let sampler_info =
+            SamplerInfo::new(FilterMethod::Anisotropic(4), WrapMode::Clamp);
 
         let slice = self.get_slice(factory, hi_speed, offset);
 
         // declare the sampler info
         // usually, this would be passed into here
-        let sampler_info = SamplerInfo::new(
-            FilterMethod::Anisotropic(4),
-            WrapMode::Clamp,
-        );
+        let sampler_info =
+            SamplerInfo::new(FilterMethod::Anisotropic(4), WrapMode::Clamp);
 
         // declare the data for the pipeline
         let data = note_pipe::Data {
             note_buffer: self.note_buffer.clone(),
-            transform: transform,
-            out_color: window.output_color.clone(),
+            transform,
+            out_color:   window.output_color.clone(),
             //note_index_offset: 0,
             //note_index_renderable: &[true, true, true, true],
             //note_index_len: 4,
             hi_speed: 200.,
             song_offset: 0.,
             note_graphic_height: 0.005,
-            texture_buffer: (self.note_texture.clone(), factory.create_sampler(sampler_info)),
+            texture_buffer: (
+                self.note_texture.clone(),
+                factory.create_sampler(sampler_info),
+            ),
         };
 
         window.encoder.draw(&slice, &*get_pipeline(factory, glsl), &data);
