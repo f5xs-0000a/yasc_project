@@ -183,6 +183,8 @@ pub struct LaneGraphics {
     zoom: f32,
     
     first_person: FirstPerson,
+
+    notes: crate::notes::Notes,
 }
 
 impl LaneGraphics {
@@ -234,6 +236,11 @@ impl LaneGraphics {
                 [0., 0., 0.],
                 FirstPersonSettings::keyboard_wasd(),
             ),
+
+            notes: crate::notes::Notes::new(
+                factory,
+                [vec![0.25], vec![0.1, 0.2], vec![0.01], vec![0.22]],
+            ),
         }
     }
 
@@ -284,7 +291,7 @@ impl LaneGraphics {
             ) *
 
             // increase the vertical length of the lanes
-            Matrix4::from_nonuniform_scale(1., self.length, 1.) *
+            Matrix4::from_nonuniform_scale(1., VERT_SCALE, 1.) *
 
             // move upwards by 1 unit
             Matrix4::from_translation(Vector3::new(0., 1., 0.));
@@ -324,7 +331,7 @@ impl LaneGraphics {
         &mut self,
         window: &mut PistonWindow,
         factory: &mut Factory,
-        glsl: GLSL
+        glsl: GLSL,
     ) {
         use gfx::texture::SamplerInfo;
         use gfx::texture::FilterMethod;
@@ -336,28 +343,21 @@ impl LaneGraphics {
             FilterMethod::Anisotropic(4),
             WrapMode::Clamp,
         );
-
-        /*
-        // get the transformation of the lane
-        let mut transform = [[0.; 4]; 4];
-        self.get_transformation()
-            .into()
-            .iter()
-            .zip(transform.iter_mut().flat_map(|x| x.iter_mut()))
-            .for_each(|(from, to)| {
-                *to = *from;
-            });
-            */
+        
+        let transform = self.get_transformation();
 
         // declare the data for the pipeline
         let data = lane_pipe::Data {
             vbuf: self.vertex_buffer.clone(),
             out_color: window.output_color.clone(),
-            transform: self.get_transformation().into(),
+            transform: transform.clone().into(),
             texture: (self.texture_buffer.clone(), factory.create_sampler(sampler_info)),
         };
 
         window.encoder.draw(&self.slice, &*get_pipeline(factory, glsl), &data);
+
+        // render the notes
+        self.notes.render_to(window, factory, glsl, 200., 0., transform.into());
     }
 
     pub fn adjust_rotation(&mut self, inc: bool) {
