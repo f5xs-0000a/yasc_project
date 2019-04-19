@@ -1,6 +1,5 @@
 #[macro_use]
 use gfx;
-
 use camera_controllers::{
     FirstPerson,
     FirstPersonSettings,
@@ -38,39 +37,7 @@ use shader_version::{
 };
 use std::sync::Arc;
 
-gfx_pipeline!( lane_pipe {
-    vbuf: gfx::VertexBuffer<Vertex> = (),
-
-    // the name must be the same as declared in the glslf file
-    out_color: gfx::RenderTarget<::gfx::format::Srgba8> = "color",
-
-    // the name must be the same as declared in the shaders
-    transform: gfx::Global<[[f32; 4]; 4]> = "transform",
-    
-    // the name must be the same as declared in the shaders
-    texture: gfx::TextureSampler<[f32; 4]> = "raster_texture",
-    //out_depth: gfx::DepthTarget<::gfx::format::DepthStencil> =
-    //    gfx::preset::depth::LESS_EQUAL_WRITE,
-});
-
-gfx_vertex_struct!(Vertex {
-    // the name must e the same as declared in the glslv file
-    vertex_pos: [f32; 2] = "vertex_pos",
-    tex_coord:  f32 = "texture_coord",
-});
-
-impl Vertex {
-    fn new(
-        vertex_pos: [f32; 2],
-        tex_coord: f32,
-    ) -> Vertex
-    {
-        Vertex {
-            vertex_pos,
-            tex_coord,
-        }
-    }
-}
+////////////////////////////////////////////////////////////////////////////////
 
 lazy_static! {
     static ref PIPELINE: RwLock<Option<Arc<PipelineState<Resources, lane_pipe::Meta>>>> =
@@ -401,100 +368,6 @@ impl LaneGraphics {
         }
         else {
             self.zoom -= increment_amt;
-        }
-    }
-}
-
-pub fn yeah() {
-    use piston_window::{
-        keyboard::Key as K,
-        Button::Keyboard,
-        ButtonState,
-        Event as E,
-        Input,
-        Loop,
-    };
-
-    // declare which version of opengl to use
-    let opengl = OpenGL::V3_3;
-
-    // declare the window
-    let mut window = WindowSettings::new("YAUSC Project", [360, 360])
-        .exit_on_esc(true)
-        .samples(4)
-        .opengl(opengl)
-        .vsync(true)
-        .srgb(true)
-        .build()
-        .map(|w: PistonWindow| w) //w.capture_cursor(true))
-        .expect("Failed to create Piston window");
-
-    // get the factory from the window. we'll be needing this.
-    let ref mut factory = window.factory.clone();
-    let glsl = opengl.to_glsl();
-
-    // declare the graphics for the lanes
-    let mut lanes = LaneGraphics::new(factory, glsl, &window);
-
-    while let Some(e) = window.next() {
-        //lanes.first_person.event(&e);
-
-        match &e {
-            E::Input(b) => {
-                // take only the buttons
-                let b = match b {
-                    Input::Button(b) => b,
-                    _ => continue,
-                };
-
-                if b.state != ButtonState::Press {
-                    continue;
-                }
-
-                // accept only the keyboard inputs
-                let key = match b.button {
-                    Keyboard(k) => k,
-                    _ => continue,
-                };
-
-                match key {
-                    K::O => lanes.adjust_rotation(true),
-                    K::L => lanes.adjust_rotation(false),
-                    K::I => lanes.adjust_slant(true),
-                    K::K => lanes.adjust_slant(false),
-                    K::U => lanes.adjust_zoom(true),
-                    K::J => lanes.adjust_zoom(false),
-                    K::Return => {
-                        lanes.first_person = FirstPerson::new(
-                            [0., 0., 0.],
-                            FirstPersonSettings::keyboard_wasd(),
-                        );
-                    },
-                    _ => continue,
-                }
-
-                dbg!(lanes.rotation);
-                dbg!(lanes.slant);
-                dbg!(lanes.zoom);
-            },
-
-            E::Loop(r) => {
-                match &r {
-                    Loop::Render(_) => {},
-                    _ => continue,
-                }
-
-                window.draw_3d(&e, |mut window| {
-                    // clear the window
-                    window
-                        .encoder
-                        .clear(&window.output_color, [0., 0., 0., 1.0]);
-
-                    lanes.render_to(&mut window, factory, glsl);
-                });
-            },
-
-            _ => {},
         }
     }
 }

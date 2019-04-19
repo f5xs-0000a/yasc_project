@@ -8,6 +8,7 @@ extern crate lazy_static;
 mod lane;
 mod notes;
 mod utils;
+mod game;
 
 fn main() {
     lane::yeah();
