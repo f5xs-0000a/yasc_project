@@ -25,23 +25,6 @@ use std::sync::Arc;
 
 ////////////////////////////////////////////////////////////////////////////////
 
-gfx_pipeline!( note_pipe {
-    note_buffer: gfx::VertexBuffer<NoteLocation> = (),
-    transform: gfx::Global<[[f32; 4]; 4]> = "transform",
-    hi_speed: gfx::Global<f32> = "hi_speed",
-    song_offset: gfx::Global<f32> = "song_offset",
-    out_color: gfx::RenderTarget<::gfx::format::Srgba8> = "color",
-    texture_buffer: gfx::TextureSampler<[f32; 4]> = "raster_texture",
-
-    note_graphic_height: gfx::Global<f32> = "note_graphic_height",
-});
-
-gfx_vertex_struct!(NoteLocation {
-    vertex_pos:  [f32; 2] = "note_pos",
-    index:       i32 = "note_index",
-    corner_type: i32 = "corner_type",
-});
-
 lazy_static! {
     static ref PIPELINE: RwLock<Option<Arc<PipelineState<Resources, note_pipe::Meta>>>> =
         RwLock::new(None);

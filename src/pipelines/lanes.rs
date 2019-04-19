@@ -1,4 +1,8 @@
-gfx_pipeline!( lane_pipe {
+
+
+////////////////////////////////////////////////////////////////////////////////
+
+gfx_pipeline!( LaneRenderPipeline {
     vbuf: gfx::VertexBuffer<Vertex> = (),
 
     // the name must be the same as declared in the glslf file
@@ -13,7 +17,7 @@ gfx_pipeline!( lane_pipe {
     //    gfx::preset::depth::LESS_EQUAL_WRITE,
 });
 
-gfx_vertex_struct!(Vertex {
+gfx_vertex_struct!( Corner {
     // the name must e the same as declared in the glslv file
     vertex_pos: [f32; 2] = "vertex_pos",
     tex_coord:  f32 = "texture_coord",

@@ -1,8 +1,7 @@
 #version 330
 
 layout (location = 0) in vec2 note_pos;
-layout (location = 1) in int note_index;
-layout (location = 2) in int corner_type;
+layout (location = 1) in int corner_type;
 
 uniform float song_offset;
 uniform float hi_speed;

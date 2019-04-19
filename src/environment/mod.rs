@@ -112,7 +112,8 @@ impl Game {
     fn handle_inputs(&mut self, input: Input) {
         let timed = GameInput {
             input,
-            time: self.get_game_time(),
+            time: Instant::now(),
+            game_time: self.get_game_time(),
         };
 
         let response = self.state.send(timed);
@@ -200,5 +201,6 @@ pub struct RenderHelperForwardMsg {
 /// has been made, accompanied by the time when it was input, if available.
 pub struct GameInput {
     input: Input,
-    time: (),
+    time: Instant,
+    game_time: (),
 }

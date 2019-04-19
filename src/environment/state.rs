@@ -16,11 +16,10 @@ pub struct GameState {
     keybindings: BiDirMap<BindRoles, ComposedKeystroke>,
     state: StateEnum,
 
-    // might not contain a bool, but rather a one-shot instead
     requested_for_render: Option<Sender<()>>,
     pending_inputs: VecDeque<GameInput>,
 
-    buttons_pressed: HashSet<Inputs>,
+    buttons_pressed: HashMap<Inputs, Instant>,
 }
 
 impl GameState {
@@ -39,7 +38,9 @@ impl GameState {
     pub fn handle_input(&mut self, input: GameInput) {
         // honestly, I'm just waving in the dark in here. if anyone can provide
         // a better algorithm/philosophy for registering buttons, PR.
+        // this will be a mess for now
 
+        let game_time = input.game_time;
         let time = input.time;
         let input = input.input;
 
@@ -50,7 +51,7 @@ impl GameState {
             new_press = Some(b.button.clone());
 
             if b.state == ButtonState::Press {
-                self.buttons_pressed.insert(b.button.clone());
+                self.buttons_pressed.insert(b.button.clone(), time);
             }
 
             else {
@@ -58,18 +59,24 @@ impl GameState {
             }
         }
 
-        if let Some(new_button) = new_press {
-            let new_press_general =
-                GeneralizedKeystroke::from_button(new_button);
+        match &self.state {
+            GS::Title => {
+                if let Some(ref new_press) = &new_press {
+                    if new_press == B::Keyboard(K::Return);
 
-            self.keybindings
-                .iter()
-                .filter(|x| self.contains(new_press_general));
+                    self.state = GS::Song,
+                }
+            },
+
+            GS::Song => {
+                // nope, nothing here for now
+            },
         }
     }
 
     pub fn provide_render_state(&self) -> () {
         // this place will be very messy for now
+
     }
 }
 
@@ -120,7 +127,14 @@ impl Handles<Input> for GameState {
 
 pub enum StateEnum {
     TitleScreen,
+    Settings,
     Song,
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+
+pub enum RenderState {
+    TitleScreen,
+    Settings,
+    Song,
+}
