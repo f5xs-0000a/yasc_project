@@ -1,9 +1,16 @@
-use bidir_map::BiDirMap;
-use self::key_bindings::BindRoles;
-use self::key_bindings::ComposedKeystroke;
+use bidir_map::BidirMap;
+use std::collections::HashMap;
+use sekibanki::Handles;
+use crate::environment::RenderRequest;
+use sekibanki::Actor;
+use sekibanki::ContextImmutHalf;
+use crate::environment::GameInput;
+use std::collections::VecDeque;
+use crate::environment::key_bindings::BindRoles;
+use crate::environment::key_bindings::ComposedKeystroke;
 use piston_window::Input;
 use std::time::Instant;
-use futures::mpsc::{
+use futures::sync::mpsc::{ // NOTE: sync or unsync?
     Receiver,
     Sender,
     channel,
@@ -13,13 +20,13 @@ use fnv::FnvHashSet as HashSet;
 ////////////////////////////////////////////////////////////////////////////////
 
 pub struct GameState {
-    keybindings: BiDirMap<BindRoles, ComposedKeystroke>,
+    keybindings: BidirMap<BindRoles, ComposedKeystroke>,
     state: StateEnum,
 
     requested_for_render: Option<Sender<()>>,
     pending_inputs: VecDeque<GameInput>,
 
-    buttons_pressed: HashMap<Inputs, Instant>,
+    buttons_pressed: HashMap<Input, Instant>,
 }
 
 impl GameState {
@@ -36,8 +43,13 @@ impl GameState {
     }
 
     pub fn handle_input(&mut self, input: GameInput) {
-        // honestly, I'm just waving in the dark in here. if anyone can provide
-        // a better algorithm/philosophy for registering buttons, PR.
+        use piston_window::ButtonState;
+        use GameState as GS;
+        use piston_window::Button as B;
+        use piston_window::keyboard::Key as K;
+        
+        // FIXME: honestly, I'm just waving in the dark in here. if anyone can
+        // provide a better algorithm/philosophy for registering buttons, PR.
         // this will be a mess for now
 
         let game_time = input.game_time;
@@ -47,7 +59,7 @@ impl GameState {
         let mut new_press = None;
 
         // update the buttons_pressed
-        if let Button(ref b) = &input {
+        if let &B::Keyboard(ref b) = &input {
             new_press = Some(b.button.clone());
 
             if b.state == ButtonState::Press {
@@ -62,9 +74,9 @@ impl GameState {
         match &self.state {
             GS::Title => {
                 if let Some(ref new_press) = &new_press {
-                    if new_press == B::Keyboard(K::Return);
-
-                    self.state = GS::Song,
+                    if new_press == B::Keyboard(K::Return) {
+                        self.state = GS::Song;
+                    }
                 }
             },
 
@@ -85,7 +97,7 @@ impl Actor for GameState {
         use std::mem::swap;
 
         // Handle all inputs
-        let mut empty = VecDeque::with_capacity(pending_inputs.capacity());
+        let mut empty = VecDeque::with_capacity(self.pending_inputs.capacity());
         swap(&mut empty, &mut self.pending_inputs);
         for input in empty.drain(..) {
             self.handle_input(input);

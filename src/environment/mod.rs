@@ -1,14 +1,27 @@
 pub mod key_bindings;
-pub mod pipelines;
 pub mod state;
+pub mod render_helper;
 
 ////////////////////////////////////////////////////////////////////////////////
 
+use sekibanki::Actor;
+use sekibanki::ResponseFuture;
+use gfx::handle::RenderTargetView;
+use gfx_device_gl::Resources;
+use gfx::format::Srgba8;
+use gfx::format::DepthStencil;
+use sekibanki::Addr;
+use gfx::handle::DepthStencilView;
+use piston_window::Events;
+use gfx_device_gl::Factory;
+use std::time::Instant;
+use self::render_helper::RenderHelper;
 use piston_window::Input;
 use piston_window::PistonWindow;
-use gfx::GfxEncoder;
+use piston_window::GfxEncoder;
 use tokio_threadpool::ThreadPool;
 use std::sync::Arc;
+use self::state::GameState;
 use parking_lot::Mutex;
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -33,13 +46,15 @@ pub struct GamePrelude {
     render_helper: Addr<RenderHelper>,
 }
 
-impl Game {
+impl GamePrelude {
     pub fn new() -> GamePrelude {
+        use piston_window::WindowSettings;
+
         // create the threadpool
         let threadpool = ThreadPool::new();
 
         // declare which version of opengl to use
-        let opengl = OpenGL::V3_3;
+        let opengl = piston_window::OpenGL::V3_3;
 
         // we'll be changing the samples, and vsync soon using settings
         // declare the window
@@ -81,7 +96,10 @@ impl Game {
         }
     }
 
-    pub fn loop(&mut self) {
+    pub fn spin(&mut self) {
+        use piston_window::Event as E;
+        use piston_window::Loop;
+
         while let Some(e) = self.window.next() {
 
         // handle the rendering of the game

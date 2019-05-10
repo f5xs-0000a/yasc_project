@@ -2,104 +2,118 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 // TODO: maybe this should be an actor too since it handles renders and inputs?
+#[derive(Debug)]
 pub struct LaneGovernor {
     // keyframes
-    rotation_events: Vec<(SongTime, Keyframe<Rad<f32>>)>,
-    slant_events: Vec<(SongTime, Keyframe<Rad<f32>>)>,
-    zoom_events: Vec<(SongTime, Keyframe<f32>)>,
+    rotation_events: Vec<(SongTime, Keyframe<TransformationKFCurve>)>,
+    slant_events: Vec<(SongTime, Keyframe<TransformationKFCurve>)>,
+    zoom_events: Vec<(SongTime, Keyframe<TransformationKFCurve>)>,
 
-    
+    // current spin
+    current_spin: Option(Spin),
+
+    // at this point, we have the drawable assets. they will be needing the
+    // matrix provided to them by the calculate_matrix()
+    lanes: Lanes,
+    notes: Bt,
+    fx: Fx,
+    lasers: Lasers,
 }
 
-pub struct Keyframe<T: Clone, C: KeyframeCurveType<T>> {
-    value: T,
-    curve: C,
-    tension: f32,
-}
-
-pub trait KeyframeCurveType<T> {
-    fn interpolate(
-        time: &SongTime,
-        kf1: &(SongTime, Keyframe<T, Self>),
-        kf2: &(SongTime, Keyframe<T, Self>),
-    ) -> T;
-}
-
-pub enum TransformationKFCurve {
-    Linear,
-    Stair,
-}
-
-pub enum LaserKFCurve {
-    Linear,
-}
+// These constant values assume an FoV of Deg(90)
+// In case of an FoV = Deg(60), use the commented values instead
+// const DEFAULT_ZOOM: f32 = -0.4375;
+// const DEFAULT_SLANT: Rad(f32) = Deg(52)
+const DEFAULT_ROTATION: Rad(f32) = Rad(0.);
+const DEFAULT_SLANT: Rad(f32) = Rad::from(Deg(36.5));
+const DEFAULT_ZOOM: f32 = -0.9765625;
 
 impl LaneGovernor {
+    pub fn get_rotation_adjustment(&self, time: &SongTime) -> Rad(f32) {
+        self.current_spin
+            .map(|spin| spin.clamped_rotate(time))
+            .unwrap_or(Rad(0.))
+    }
 
-            rotation: Rad(0.),
-            slant: Rad::from(Deg(36.5)),
-            zoom: -0.9765625,
+    pub fn get_rotation_after_adjustment(&self, time: &SongTime) -> Rad(f32) {
+        self.get_current_rotation(time) +
+        self.get_rotation_after_adjustment(time)
+    }
+
     pub fn get_current_rotation(&self, time: &SongTime) -> Rad(f32) {
+        // if there are no rotation events, the rotation is just zero
         if self.rotation_events.is_empty() {
-            return Rad(0.);
+            return DEFAULT_ROTATION;
         }
 
+        // find the index of the current rotation index given the time
         let search = self
             .rotation_events
             .binary_search_by_key(time, |(t, _)| t);
 
         match search {
-            Ok(idx) => self.rotation_events[idx].1.value.clone(),
             Err(idx) => {
-                if idx == self.rotation_events.len() {
-                    self.rotation_events[idx - 1].1.value.clone()
-                }
-
-                else {
-                    TransformationKFCurve::interpolate(
-                        time,
-                        &self.rotation_events[idx - 1],
-                        &self.rotation_events[idx],
+                // in case that the index found is within the first index and
+                // the second to the last index, inclusive...
+                if idx != self.rotation_events.len() {
+                    Rad(
+                        self.rotation_events[idx - 1].interpolate(
+                            time,
+                            &self.rotation_events[idx],
+                        )
                     )
                 }
-            }
+
+                // in case that the index found is the last index, we just give
+                // the output of the last
+                else {
+                    Rad(self.rotation_events[idx - 1].1.value.clone())
+                }
+            },
+
+            // if we have an exact match (which is highly unlikely)
+            Ok(idx) => self.rotation_events[idx].1.value.clone(),
         }
     }
 
     pub fn get_current_slant(&self, time: &SongTime) -> Rad(f32) {
         if self.slant_events.is_empty() {
-            // this assumes an FOV of 90
-            return Rad::from(Deg(36.5));
-            // if FOV = 60, use Deg(52)
+            return DEFAULT_SLANT;
         }
 
+        // find the index of the current rotation index given the time
         let search = self
             .slant_events
             .binary_search_by_key(time, |(t, _)| t);
 
         match search {
-            Ok(idx) => self.slant_events[idx].1.value.clone(),
             Err(idx) => {
-                if idx == self.slant_events.len() {
-                    self.slant_events[idx - 1].1.value.clone()
-                }
-
-                else {
-                    TransformationKFCurve::interpolate(
-                        time,
-                        &self.slant_events[idx - 1],
-                        &self.slant_events[idx],
+                // in case that the index found is within the first index and
+                // the second to the last index, inclusive...
+                if idx != self.slant_events.len() {
+                    Rad(
+                        self.slant_events[idx - 1].interpolate(
+                            time,
+                            &self.slant_events[idx],
+                        )
                     )
                 }
-            }
+
+                // in case that the index found is the last index, we just give
+                // the output of the last
+                else {
+                    Rad(self.slant_events[idx - 1].1.value.clone())
+                }
+            },
+
+            // if we have an exact match (which is highly unlikely)
+            Ok(idx) => self.slant_events[idx].1.value.clone(),
         }
     }
 
     pub fn get_current_zoom(&self, time: &SongTime) -> f32 {
         if self.zoom_events.is_empty() {
-            // this assumes an FOV of 90
-            return -0.9765625;
-            // if FOV = 60, use -0.4375
+            return DEFAULT_ZOOM;
         }
 
         let search = self
@@ -107,20 +121,27 @@ impl LaneGovernor {
             .binary_search_by_key(time, |(t, _)| t);
 
         match search {
-            Ok(idx) => self.zoom_events[idx].1.value.clone(),
             Err(idx) => {
-                if idx == self.zoom_events.len() {
-                    self.zoom_events[idx - 1].1.value.clone()
-                }
-
-                else {
-                    TransformationKFCurve::interpolate(
-                        time,
-                        &self.zoom_events[idx - 1],
-                        &self.zoom_events[idx],
+                // in case that the index found is within the first index and
+                // the second to the last index, inclusive...
+                if idx != self.zoom_events.len() {
+                    Rad(
+                        self.zoom_events[idx - 1].interpolate(
+                            time,
+                            &self.zoom_events[idx],
+                        )
                     )
                 }
-            }
+
+                // in case that the index found is the last index, we just give
+                // the output of the last
+                else {
+                    Rad(self.zoom_events[idx - 1].1.value.clone())
+                }
+            },
+
+            // if we have an exact match (which is highly unlikely)
+            Ok(idx) => self.zoom_events[idx].1.value.clone(),
         }
     }
 
@@ -128,7 +149,7 @@ impl LaneGovernor {
         const BACK_OFFSET: f32 = -3.6;
         const VERT_SCALE: f32 = 10.25;
 
-        let rotation = self.get_current_rotation(time);
+        let rotation = self.get_rotation_after_adjustment(time);
         let slant = self.get_current_slant(time);
         let zoom = self.get_current_zoom(time);
 
@@ -138,7 +159,7 @@ impl LaneGovernor {
                 Vector3::new(
                     0.,
                     0.,
-                    BACK_OFFSET * self.zoom.exp(),
+                    BACK_OFFSET * zoom.exp(),
                 )
             ) *
 
@@ -146,7 +167,7 @@ impl LaneGovernor {
             Matrix4::from(
                 Quaternion::from_axis_angle(
                     Vector3::new(1., 0., 0.),
-                    -self.slant,
+                    -slant,
                 )
             ) *
 
@@ -156,14 +177,24 @@ impl LaneGovernor {
             // move upwards by 1 unit
             Matrix4::from_translation(Vector3::new(0., 1., 0.));
 
-        let camera = self.first_person.camera(0.).orthogonal();
-        let mut converted = [0.; 16];
-        camera
-            .iter()
-            .flat_map(|s| s.iter())
-            .zip(converted.iter_mut())
-            .for_each(|(from, to)| *to = *from);
-        let view = Matrix4::from(camera);
+        let view = {
+            let camera = self.first_person.camera(0.).orthogonal();
+            let mut converted = [0.; 16];
+            camera
+                .iter()
+                .flat_map(|s| s.iter())
+                .zip(converted.iter_mut())
+                .for_each(|(from, to)| *to = *from);
+            
+            Matrix4::from(camera)
+        };
+
+        let projection = Matrix4::from(PerspectiveFov {
+            fovy:   Rad::from(Deg(90.)),
+            aspect: 1.,
+            near:   core::f32::MIN_POSITIVE,
+            far:    1.,
+        });
 
         let post_mvp = mvp(&model, &view, &projection);
 
@@ -171,7 +202,7 @@ impl LaneGovernor {
         Matrix4::from(
             Quaternion::from_axis_angle(
                 Vector3::new(0., 0., 1.),
-                self.rotation,
+                rotation,
             )
         ) *
 
@@ -180,7 +211,7 @@ impl LaneGovernor {
             Vector3::new(0., -0.975, 0.)
         ) *
 
-        mvp
+        post_mvp
     }
 }
 
@@ -191,4 +222,77 @@ fn mvp(
 ) -> Matrix4<f32>
 {
     p * (v * m)
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+#[derive(Debug, Clone)]
+pub struct SpinBuilder {
+    pub duration: SongTime,
+    pub direction: bool,
+    pub spin_type: SpinType,
+}
+
+#[derive(Debug, Clone)]
+pub struct Spin {
+    start: SongTime,
+    duration: SongTime,
+    direction: bool,
+    spin_type: SpinType,
+}
+
+pub enum SpinType {
+    Spin,
+    Sway,
+}
+
+impl SpinBuilder {
+    pub fn build(self, start: SongTime) -> Spin {
+        Spin {
+            start,
+            duration: self.duration,
+            direction: self.direction,
+            spin_type: self.spin_type,
+        }
+    }
+}
+
+impl SpinType {
+    /// Returns the corresponding rotation given a time value.
+    ///
+    /// The time value should be within (0, 1). If outside the range, the
+    /// function will return 0 (as if there is no rotation).
+    pub fn clamped_rotate(&self, time_val: f32) -> Rad(f32) {
+        use SpinType::*;
+
+        // if outside the range of (0, 1)
+        if !(0. < time_val && time_val < 1.) {
+            return Rad(0.)
+        }
+
+        match self {
+            Spin => {
+                unimplemented!()
+                // utilize envelopes in here
+                // there is an envelope crate out there
+            },
+
+            Sway => {
+                unimplemented!()
+            }
+        }
+    }
+}
+
+impl Spin {
+    pub fn clamped_rotate(&self, time_val: &SongTime) -> Rad(f32) {
+        if !(self.start < *time_val && *time_val < self.start + self.duration) {
+            return Rad(0.);
+        }
+
+        let progress =
+            (time_val.0 - self.start.0) as f32 / self.duration.0 as f32;
+
+        self.spin_type.clamped_rotate(time_val)
+    }
 }

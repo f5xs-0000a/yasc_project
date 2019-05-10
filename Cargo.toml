@@ -13,9 +13,14 @@
     piston_window = "*"
     image = "*"
 
+    # MUSIC
+    piston-music = "*"
+    # we are going to use Faust for the effects
+
     # CG MATHEMATICS
     camera_controllers = "*"
     cgmath = "*"
+    lyon = "*"
     viewport = { git = "https://github.com/f5xs-0000a/viewport.git" }
 
     # MULTITHREADING
@@ -24,7 +29,7 @@
     futures = "0.1.26" # align with sekibanki's version
 
     # SCRIPTING
-    # dyon = "*"
+    dyon = { version = "0.41.0", default-features = false }
 
     # UTILITIES
     bidir-map = "*"
@@ -33,3 +38,4 @@
     itertools = "*"
     lazy_static = "*"
     parking_lot = "*"
+    envelope = "*"

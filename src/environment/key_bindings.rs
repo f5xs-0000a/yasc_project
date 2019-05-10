@@ -1,4 +1,6 @@
-use bidir_map::BiDirMap;
+use bidir_map::BidirMap;
+use piston_window::Button;
+use piston_window::Key;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -20,10 +22,11 @@ pub enum BindRoles {
 }
 
 impl BindRoles {
-    pub fn default_keyboard_binding() -> BiDirMap<BindRoles, ComposedKeystroke> {
+    pub fn default_keyboard_binding() -> BidirMap<BindRoles, ComposedKeystroke> {
+        use piston_window::keyboard::Key;
         use BindRoles::*;
 
-        let mut map = BiDirMap::new();
+        let mut map = BidirMap::new();
 
         for (role, ks) in [
             (BT_A, ComposedKeystroke::new(Key::D)),
@@ -59,7 +62,7 @@ impl GeneralizedKeystroke {
         
         match (self, button) {
             (GK::Keyboard(k1), B::Keyboard(k2)) => k1 == k2,
-            (GK::Controller(k), B::Controller(c)) => k1 == c.button,
+            (GK::Controller(k), B::Controller(c)) => k == c.button,
             _ => false,
         }
     }
@@ -90,7 +93,7 @@ impl ComposedKeystroke {
         // check if the key already exists
         match bin_srch_idx {
             Ok(_) => return,
-            Err(e) => self.0.insert(e, key);
+            Err(e) => self.0.insert(e, key),
         }
     }
 

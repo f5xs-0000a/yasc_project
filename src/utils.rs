@@ -9,3 +9,7 @@ pub fn linear_map(
     let output = (x_i - x_min) / (x_max - x_min) * (y_max - y_min) + y_min;
     output
 }
+
+pub fn sigmoid(x: f64) -> f64 {
+    1. / (1. + (-x).exp())
+}
