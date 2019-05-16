@@ -1,30 +1,40 @@
+use crate::environment::{
+    key_bindings::{
+        BindRoles,
+        ComposedKeystroke,
+    },
+    GameInput,
+    RenderRequest,
+};
 use bidir_map::BidirMap;
-use std::collections::HashMap;
-use sekibanki::Handles;
-use crate::environment::RenderRequest;
-use sekibanki::Actor;
-use sekibanki::ContextImmutHalf;
-use crate::environment::GameInput;
-use std::collections::VecDeque;
-use crate::environment::key_bindings::BindRoles;
-use crate::environment::key_bindings::ComposedKeystroke;
-use piston_window::Input;
-use std::time::Instant;
-use futures::sync::mpsc::{ // NOTE: sync or unsync?
+use fnv::FnvHashSet as HashSet;
+use futures::sync::mpsc::{
+    channel,
     Receiver,
     Sender,
-    channel,
 };
-use fnv::FnvHashSet as HashSet;
+use piston_window::Input;
+use sekibanki::{
+    Actor,
+    ContextImmutHalf,
+    Handles,
+};
+use std::{
+    collections::{
+        HashMap,
+        VecDeque,
+    },
+    time::Instant,
+};
 
 ////////////////////////////////////////////////////////////////////////////////
 
 pub struct GameState {
     keybindings: BidirMap<BindRoles, ComposedKeystroke>,
-    state: StateEnum,
+    state:       StateEnum,
 
     requested_for_render: Option<Sender<()>>,
-    pending_inputs: VecDeque<GameInput>,
+    pending_inputs:       VecDeque<GameInput>,
 
     buttons_pressed: HashMap<Input, Instant>,
 }
@@ -42,12 +52,18 @@ impl GameState {
         }
     }
 
-    pub fn handle_input(&mut self, input: GameInput) {
-        use piston_window::ButtonState;
+    pub fn handle_input(
+        &mut self,
+        input: GameInput,
+    )
+    {
+        use piston_window::{
+            keyboard::Key as K,
+            Button as B,
+            ButtonState,
+        };
         use GameState as GS;
-        use piston_window::Button as B;
-        use piston_window::keyboard::Key as K;
-        
+
         // FIXME: honestly, I'm just waving in the dark in here. if anyone can
         // provide a better algorithm/philosophy for registering buttons, PR.
         // this will be a mess for now
@@ -65,7 +81,6 @@ impl GameState {
             if b.state == ButtonState::Press {
                 self.buttons_pressed.insert(b.button.clone(), time);
             }
-
             else {
                 self.buttons_pressed.remove(&b.button);
             }
@@ -93,7 +108,11 @@ impl GameState {
 }
 
 impl Actor for GameState {
-    fn on_message_exhaust(&mut self, ctx: ContextImmutHalf<Self>) {
+    fn on_message_exhaust(
+        &mut self,
+        ctx: ContextImmutHalf<Self>,
+    )
+    {
         use std::mem::swap;
 
         // Handle all inputs
@@ -118,8 +137,12 @@ impl Actor for GameState {
 impl Handles<RenderRequest> for GameState {
     type Response = Receiver<()>;
 
-    fn handle(&mut self, msg: RenderRequest, ctx: ContextImmutHalf<Self>)
-    -> Self::Response {
+    fn handle(
+        &mut self,
+        msg: RenderRequest,
+        ctx: ContextImmutHalf<Self>,
+    ) -> Self::Response
+    {
         let (tx, rx) = channel();
         self.requested_for_render = Some(tx);
         rx
@@ -129,8 +152,12 @@ impl Handles<RenderRequest> for GameState {
 impl Handles<Input> for GameState {
     type Response = ();
 
-    fn handle(&mut self, msg: Input, ctx: ContextImmutHalf<Self>)
-    -> Self::Response {
+    fn handle(
+        &mut self,
+        msg: Input,
+        ctx: ContextImmutHalf<Self>,
+    ) -> Self::Response
+    {
         self.pending_inputs.push(msg);
     }
 }

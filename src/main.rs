@@ -1,3 +1,4 @@
 mod environment;
 
-fn main() {}
+fn main() {
+}

@@ -1,28 +1,40 @@
 pub mod key_bindings;
 pub mod state;
-pub mod render_helper;
 
 ////////////////////////////////////////////////////////////////////////////////
 
-use sekibanki::Actor;
-use sekibanki::ResponseFuture;
-use gfx::handle::RenderTargetView;
-use gfx_device_gl::Resources;
-use gfx::format::Srgba8;
-use gfx::format::DepthStencil;
-use sekibanki::Addr;
-use gfx::handle::DepthStencilView;
-use piston_window::Events;
-use gfx_device_gl::Factory;
-use std::time::Instant;
-use self::render_helper::RenderHelper;
-use piston_window::Input;
-use piston_window::PistonWindow;
-use piston_window::GfxEncoder;
-use tokio_threadpool::ThreadPool;
-use std::sync::Arc;
 use self::state::GameState;
+use gfx::{
+    format::{
+        DepthStencil,
+        Srgba8,
+    },
+    handle::{
+        DepthStencilView,
+        RenderTargetView,
+    },
+};
+use gfx_device_gl::{
+    Factory,
+    Resources,
+};
 use parking_lot::Mutex;
+use piston_window::{
+    Events,
+    GfxEncoder,
+    Input,
+    PistonWindow,
+};
+use sekibanki::{
+    Actor,
+    Addr,
+    ResponseFuture,
+};
+use std::{
+    sync::Arc,
+    time::Instant,
+};
+use tokio_threadpool::ThreadPool;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -30,20 +42,22 @@ pub struct GamePrelude {
     threadpool: ThreadPool,
 
     // we just extracted the fields of PistonWindow here and wrap some of them
-    window: Arc<Mutex<PistonWindow>>,
+    window:  Arc<Mutex<PistonWindow>>,
     encoder: Arc<Mutex<GfxEncoder>>,
     //device: Device,
-    output_color: RenderTargetView<Resources, Srgba8>,
+    output_color:   RenderTargetView<Resources, Srgba8>,
     output_stencil: DepthStencilView<Resources, DepthStencil>,
     //g2d: Gfx2d<Resources>,
     // I don't know if we should wrap factory but we did anyway
     factory: Arc<Mutex<Factory>>,
-    // we are not going to wrap events since it is not going to be passed around
-    // and only GamePrelude will have the direct access to events
+    // we are not going to wrap events since it is not going to be passed
+    // around and only GamePrelude will have the direct access to events
     events: Events,
 
-    state: Addr<GameState>,
-    render_helper: Addr<RenderHelper>,
+    state:         Addr<GameState>,
+
+    // TODO: PistonWindow and Factory are not Send nor Sync. Do not even try to
+    // put them inside an arc+mutex.
 }
 
 impl GamePrelude {
@@ -65,7 +79,7 @@ impl GamePrelude {
             .vsync(true)
             .build()
             .expect("Failed to create Piston window");
-        // Nobody: 
+        // Nobody:
         // F5XS: for the love of god, do not enable benchmark mode for the
         // render loop. the event loop will pump out render events faster than
         // the render helper could provided responses
@@ -77,8 +91,6 @@ impl GamePrelude {
         let factory = Arc::new(Mutex::new(pistonwindow.factory));
         let window = Arc::new(Mutex::new(pistonwindow.window));
 
-        let render_helper = RenderHelper::new()
-            .start_actor(threadpool.sender());
         let state = GameState::start().start_actor(threadpool.sender());
 
         GamePrelude {
@@ -90,44 +102,48 @@ impl GamePrelude {
             output_stencil,
             factory,
             events,
-    
+
             state,
-            render_helper,
         }
     }
 
     pub fn spin(&mut self) {
-        use piston_window::Event as E;
-        use piston_window::Loop;
+        use piston_window::{
+            Event as E,
+            Loop,
+        };
 
         while let Some(e) = self.window.next() {
+            // handle the rendering of the game
+            match &e {
+                E::Loop(Loop::Render(_)) => {
+                    self.render_procedure();
+                    continue;
+                },
+                _ => {},
+            }
 
-        // handle the rendering of the game
-        match &e {
-            E::Loop(Loop::Render(_)) => {
-                self.render_procedure();
-                continue;
-            },
-            _ => {},
-        }
+            match e {
+                // we already handled this
+                E::Loop(Loop::Render(_)) => unreachable!(),
 
-        match e {
-            // we already handled this
-            E::Loop(Loop::Render(_)) => unreachable!(),
+                // handle the inputs of the game
+                E::Input(b) => self.handle_inputs(b),
 
-            // handle the inputs of the game
-            E::Input(b) => self.handle_inputs(b),
-
-            _ => {},
-        } // match
-        } // while 
+                _ => {},
+            } // match
+        } // while
     }
 
     fn get_game_time(&self) -> () {
         ()
     }
 
-    fn handle_inputs(&mut self, input: Input) {
+    fn handle_inputs(
+        &mut self,
+        input: Input,
+    )
+    {
         let timed = GameInput {
             input,
             time: Instant::now(),
@@ -137,7 +153,7 @@ impl GamePrelude {
         let response = self.state.send(timed);
     }
 
-    fn render_procedure(&self) {
+    fn pre_render_procedure(&self) {
         // The design philosophy behind the rendering is that we assume each
         // groupable object that requires rendering to be an actor that will
         // need their own independent computer. A message is sent to the actor,
@@ -155,7 +171,7 @@ impl GamePrelude {
         //
         // The actor system is provided by Sekibanki.
         // (the library, not the rokurokubi)
-        
+
         // the request for render state is sent to the game state, along
         // with a copy of Factory
         // the response is sent to the render helper, along with a copy
@@ -173,15 +189,13 @@ impl GamePrelude {
             output_stencil: self.output_stencil.clone(),
             time: self.get_game_time(),
         };
-        let response = self.state.send(request);
+        let response: () = self.state.send(request);
 
-        let forward = RenderHelperForwardMsg {
-            factory: self.factory.clone(),
-            window: self.window.clone(),
-            encoder: self.encoder.clone(),
-            response,
-        };
-        self.render_helper.send(forward);
+        self.render_procedure(response);
+    }
+
+    fn render_procedure(&self) {
+        unimplemented!();
     }
 }
 
@@ -193,8 +207,8 @@ impl Actor for GamePrelude {
 /// A message sent by the game prelude to the game state, asking the state to
 /// produce its render state
 pub struct RenderRequest {
-    pub factory: Arc<Mutex<Factory>>,
-    pub output_color: RenderTargetView<Resources, Srgba8>,
+    pub factory:        Arc<Mutex<Factory>>,
+    pub output_color:   RenderTargetView<Resources, Srgba8>,
     pub output_stencil: DepthStencilView<Resources, DepthStencil>,
 
     // we're going to implement time soon
@@ -203,22 +217,10 @@ pub struct RenderRequest {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-/// A message sent by the game prelude to the render helper, asking the helper
-/// to render the frame given the response by the game state
-pub struct RenderHelperForwardMsg {
-    pub factory: Arc<Mutex<Factory>>,
-    pub window: Arc<Mutex<PistonWindow>>,
-    pub encoder: Arc<Mutex<GfxEncoder>>,
-
-    pub response: ResponseFuture<GameState, RenderRequest>,
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
 /// A messag sent by the game prelude to the game state, telling that an input
 /// has been made, accompanied by the time when it was input, if available.
 pub struct GameInput {
-    input: Input,
-    time: Instant,
+    input:     Input,
+    time:      Instant,
     game_time: (),
 }
