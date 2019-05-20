@@ -3,6 +3,7 @@ pub mod state;
 
 ////////////////////////////////////////////////////////////////////////////////
 
+use gfx::Factory as _;
 use self::state::GameState;
 use futures::sync::mpsc::{
     Receiver,
@@ -16,12 +17,12 @@ use gfx::{
     handle::{
         DepthStencilView,
         RenderTargetView,
+        Sampler,
     },
 };
 use gfx_device_gl::{
     Factory,
     Resources,
-    Sampler,
 };
 use glutin_window::GlutinWindow;
 use parking_lot::Mutex;
@@ -63,7 +64,7 @@ pub struct GamePrelude {
 
     state: Addr<GameState>,
 
-    sampler: Sampler,
+    sampler: Sampler<Resources>,
 }
 
 impl GamePrelude {
@@ -91,11 +92,13 @@ impl GamePrelude {
         let output_color = pistonwindow.output_color;
         let output_stencil = pistonwindow.output_stencil;
         let events = pistonwindow.events.lazy(true);
-        let factory = pistonwindow.factory;
+        let mut factory = pistonwindow.factory;
         let window = pistonwindow.window;
 
         let state = GameState::start()
             .start_actor(Default::default(), threadpool.sender().clone());
+
+        let sampler = generate_sampler(&mut factory);
 
         GamePrelude {
             threadpool,
@@ -108,7 +111,7 @@ impl GamePrelude {
             events,
 
             state,
-            sampler: unimplemented!(),
+            sampler,
         }
     }
 
@@ -204,6 +207,19 @@ impl GamePrelude {
     fn render_procedure(&self) {
         unimplemented!();
     }
+}
+
+fn generate_sampler(factory: &mut Factory) -> Sampler<Resources> {
+    use gfx::texture::SamplerInfo;
+    use gfx::texture::FilterMethod;
+    use gfx::texture::WrapMode;
+
+    let info = SamplerInfo::new(
+        FilterMethod::Anisotropic(8),
+        WrapMode::Clamp,
+    );
+
+    factory.create_sampler(info)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
