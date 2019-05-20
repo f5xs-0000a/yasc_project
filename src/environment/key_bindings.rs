@@ -26,35 +26,49 @@ pub enum BindRoles {
 impl BindRoles {
     pub fn default_keyboard_binding() -> BidirMap<BindRoles, ComposedKeystroke>
     {
+        use self::GeneralizedKeystroke as GK;
         use piston_window::keyboard::Key;
         use BindRoles::*;
 
         let mut map = BidirMap::new();
 
-        for (role, ks) in [
-            (BT_A, ComposedKeystroke::new(Key::D)),
-            (BT_B, ComposedKeystroke::new(Key::F)),
-            (BT_C, ComposedKeystroke::new(Key::J)),
-            (BT_D, ComposedKeystroke::new(Key::K)),
-            (FX_L, ComposedKeystroke::new(Key::V)),
-            (FX_R, ComposedKeystroke::new(Key::N)),
-            (KN_L_CW, ComposedKeystroke::new(Key::R)),
-            (KN_L_CCW, ComposedKeystroke::new(Key::E)),
-            (KN_R_CW, ComposedKeystroke::new(Key::I)),
-            (KN_R_CCW, ComposedKeystroke::new(Key::U)),
-            (START, ComposedKeystroke::new(Key::Return)),
-            (BACK, ComposedKeystroke::new(Key::Escape)),
+        macro_rules! CK_GENERATOR {
+            [ $( ($bind: ident , $id: ident) ),+ ] => {
+                vec![
+                    $(
+                        (
+                            $bind,
+                            ComposedKeystroke::new(GK::Keyboard(Key::$id))
+                        )
+                    ),+
+                ]
+            }
+        }
+
+        CK_GENERATOR![
+            (BT_A, D),
+            (BT_B, F),
+            (BT_C, J),
+            (BT_D, K),
+            (FX_L, V),
+            (FX_R, N),
+            (KN_L_CW, R),
+            (KN_L_CCW, E),
+            (KN_R_CW, I),
+            (KN_R_CCW, U),
+            (START, Return),
+            (BACK, Escape)
         ]
         .into_iter()
-        {
+        .for_each(|(role, ks)| {
             map.insert(role, ks);
-        }
+        });
 
         map
     }
 }
 
-#[derive(Hash, Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Hash, Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub enum GeneralizedKeystroke {
     Keyboard(Key),
     Controller(u8),
@@ -71,7 +85,7 @@ impl GeneralizedKeystroke {
 
         match (self, button) {
             (GK::Keyboard(k1), B::Keyboard(k2)) => k1 == k2,
-            (GK::Controller(k), B::Controller(c)) => k == c.button,
+            (GK::Controller(k), B::Controller(c)) => *k == c.button,
             _ => false,
         }
     }
@@ -81,8 +95,8 @@ impl GeneralizedKeystroke {
         use GeneralizedKeystroke as GK;
 
         match button {
-            B::Keyboard(k) => Some(GK::Keyboard(k)),
-            B::Controller(c) => Some(GK::Controller(c.button)),
+            B::Keyboard(k) => Some(GK::Keyboard(k.clone())),
+            B::Controller(c) => Some(GK::Controller(c.button.clone())),
             _ => None,
         }
     }
@@ -93,15 +107,15 @@ pub struct ComposedKeystroke(Vec<GeneralizedKeystroke>);
 
 impl ComposedKeystroke {
     pub fn new(key: GeneralizedKeystroke) -> ComposedKeystroke {
-        ComposedKeystroke::new(vec![key])
+        ComposedKeystroke(vec![key])
     }
 
     pub fn add(
-        self,
+        &mut self,
         key: GeneralizedKeystroke,
-    ) -> ComposedKeystroke
+    )
     {
-        let bin_srch_idx = self.0.iter().binary_search(&key);
+        let bin_srch_idx = self.0.binary_search(&key);
 
         // check if the key already exists
         match bin_srch_idx {

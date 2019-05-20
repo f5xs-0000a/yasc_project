@@ -4,6 +4,10 @@ pub mod state;
 ////////////////////////////////////////////////////////////////////////////////
 
 use self::state::GameState;
+use futures::sync::mpsc::{
+    Receiver,
+    Sender,
+};
 use gfx::{
     format::{
         DepthStencil,
@@ -17,9 +21,12 @@ use gfx::{
 use gfx_device_gl::{
     Factory,
     Resources,
+    Sampler,
 };
+use glutin_window::GlutinWindow;
 use parking_lot::Mutex;
 use piston_window::{
+    EventLoop,
     Events,
     GfxEncoder,
     Input,
@@ -42,22 +49,21 @@ pub struct GamePrelude {
     threadpool: ThreadPool,
 
     // we just extracted the fields of PistonWindow here and wrap some of them
-    window:  Arc<Mutex<PistonWindow>>,
+    window:  GlutinWindow,
     encoder: Arc<Mutex<GfxEncoder>>,
     //device: Device,
     output_color:   RenderTargetView<Resources, Srgba8>,
     output_stencil: DepthStencilView<Resources, DepthStencil>,
     //g2d: Gfx2d<Resources>,
     // I don't know if we should wrap factory but we did anyway
-    factory: Arc<Mutex<Factory>>,
-    // we are not going to wrap events since it is not going to be passed
-    // around and only GamePrelude will have the direct access to events
+    factory: Factory,
+    // since calling Events::next() requires a &mut GlutinWindow, we place this
+    // here and rethink our life choices
     events: Events,
 
-    state:         Addr<GameState>,
+    state: Addr<GameState>,
 
-    // TODO: PistonWindow and Factory are not Send nor Sync. Do not even try to
-    // put them inside an arc+mutex.
+    sampler: Sampler,
 }
 
 impl GamePrelude {
@@ -72,26 +78,24 @@ impl GamePrelude {
 
         // we'll be changing the samples, and vsync soon using settings
         // declare the window
-        let mut pistonwindow = WindowSettings::new("YASC Project", [360, 360])
-            .opengl(opengl)
-            .srgb(true)
-            .samples(4)
-            .vsync(true)
-            .build()
-            .expect("Failed to create Piston window");
-        // Nobody:
-        // F5XS: for the love of god, do not enable benchmark mode for the
-        // render loop. the event loop will pump out render events faster than
-        // the render helper could provided responses
+        let mut pistonwindow: PistonWindow =
+            WindowSettings::new("YASC Project", [360, 360])
+                .opengl(opengl)
+                .srgb(true)
+                .samples(4)
+                .vsync(true)
+                .build()
+                .expect("Failed to create Piston window");
 
         let encoder = Arc::new(Mutex::new(pistonwindow.encoder));
-        let output_color = pistonwindow.output_window;
+        let output_color = pistonwindow.output_color;
         let output_stencil = pistonwindow.output_stencil;
-        let events = pistonwindow.events;
-        let factory = Arc::new(Mutex::new(pistonwindow.factory));
-        let window = Arc::new(Mutex::new(pistonwindow.window));
+        let events = pistonwindow.events.lazy(true);
+        let factory = pistonwindow.factory;
+        let window = pistonwindow.window;
 
-        let state = GameState::start().start_actor(threadpool.sender());
+        let state = GameState::start()
+            .start_actor(Default::default(), threadpool.sender().clone());
 
         GamePrelude {
             threadpool,
@@ -104,6 +108,7 @@ impl GamePrelude {
             events,
 
             state,
+            sampler: unimplemented!(),
         }
     }
 
@@ -113,7 +118,7 @@ impl GamePrelude {
             Loop,
         };
 
-        while let Some(e) = self.window.next() {
+        while let Some(e) = self.events.next(&mut self.window) {
             // handle the rendering of the game
             match &e {
                 E::Loop(Loop::Render(_)) => {
@@ -153,6 +158,7 @@ impl GamePrelude {
         let response = self.state.send(timed);
     }
 
+    /*
     fn pre_render_procedure(&self) {
         // The design philosophy behind the rendering is that we assume each
         // groupable object that requires rendering to be an actor that will
@@ -193,13 +199,11 @@ impl GamePrelude {
 
         self.render_procedure(response);
     }
+    */
 
     fn render_procedure(&self) {
         unimplemented!();
     }
-}
-
-impl Actor for GamePrelude {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -207,7 +211,6 @@ impl Actor for GamePrelude {
 /// A message sent by the game prelude to the game state, asking the state to
 /// produce its render state
 pub struct RenderRequest {
-    pub factory:        Arc<Mutex<Factory>>,
     pub output_color:   RenderTargetView<Resources, Srgba8>,
     pub output_stencil: DepthStencilView<Resources, DepthStencil>,
 
@@ -217,7 +220,7 @@ pub struct RenderRequest {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-/// A messag sent by the game prelude to the game state, telling that an input
+/// A message sent by the game prelude to the game state, telling that an input
 /// has been made, accompanied by the time when it was input, if available.
 pub struct GameInput {
     input:     Input,

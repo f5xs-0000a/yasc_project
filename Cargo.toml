@@ -12,6 +12,7 @@
     shader_version = "*"
     piston_window = "*"
     image = "*"
+    pistoncore-glutin_window = "0.54.0" # align with piston_window's version
 
     # MUSIC
     piston-music = "*"

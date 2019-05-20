@@ -8,12 +8,18 @@ use crate::environment::{
 };
 use bidir_map::BidirMap;
 use fnv::FnvHashSet as HashSet;
-use futures::sync::mpsc::{
-    channel,
-    Receiver,
-    Sender,
+use futures::{
+    sink::Sink,
+    sync::mpsc::{
+        channel,
+        Receiver,
+        Sender,
+    },
 };
-use piston_window::Input;
+use piston_window::{
+    Button,
+    Input,
+};
 use sekibanki::{
     Actor,
     ContextImmutHalf,
@@ -36,7 +42,7 @@ pub struct GameState {
     requested_for_render: Option<Sender<()>>,
     pending_inputs:       VecDeque<GameInput>,
 
-    buttons_pressed: HashMap<Input, Instant>,
+    buttons_pressed: Vec<(Button, Instant)>,
 }
 
 impl GameState {
@@ -44,11 +50,11 @@ impl GameState {
         GameState {
             // TODO: should be read from a config file
             keybindings: BindRoles::default_keyboard_binding(),
-            state: StateEnum::Title,
+            state: StateEnum::TitleScreen,
             requested_for_render: None,
             // 8 is an arbitrary number
-            pending_inputs: VecDeque::with_capacity(8),
-            inputs_pressed: HashSet::with_capacity(8),
+            pending_inputs:  VecDeque::with_capacity(8),
+            buttons_pressed: Vec::with_capacity(8),
         }
     }
 
@@ -63,6 +69,7 @@ impl GameState {
             ButtonState,
         };
         use GameState as GS;
+        use StateEnum as SE;
 
         // FIXME: honestly, I'm just waving in the dark in here. if anyone can
         // provide a better algorithm/philosophy for registering buttons, PR.
@@ -75,29 +82,31 @@ impl GameState {
         let mut new_press = None;
 
         // update the buttons_pressed
-        if let &B::Keyboard(ref b) = &input {
+        if let &Input::Button(b) = &input {
             new_press = Some(b.button.clone());
 
             if b.state == ButtonState::Press {
-                self.buttons_pressed.insert(b.button.clone(), time);
+                self.buttons_pressed.push((b.button.clone(), time));
             }
             else {
-                self.buttons_pressed.remove(&b.button);
+                self.buttons_pressed.retain(|x| x.0 != b.button);
             }
         }
 
         match &self.state {
-            GS::Title => {
+            SE::TitleScreen => {
                 if let Some(ref new_press) = &new_press {
-                    if new_press == B::Keyboard(K::Return) {
-                        self.state = GS::Song;
+                    if *new_press == B::Keyboard(K::Return) {
+                        self.state = SE::Song;
                     }
                 }
             },
 
-            GS::Song => {
+            SE::Song => {
                 // nope, nothing here for now
             },
+
+            SE::Settings => {},
         }
     }
 
@@ -110,7 +119,7 @@ impl GameState {
 impl Actor for GameState {
     fn on_message_exhaust(
         &mut self,
-        ctx: ContextImmutHalf<Self>,
+        ctx: &ContextImmutHalf<Self>,
     )
     {
         use std::mem::swap;
@@ -134,6 +143,7 @@ impl Actor for GameState {
     }
 }
 
+/*
 impl Handles<RenderRequest> for GameState {
     type Response = Receiver<()>;
 
@@ -148,17 +158,18 @@ impl Handles<RenderRequest> for GameState {
         rx
     }
 }
+*/
 
-impl Handles<Input> for GameState {
+impl Handles<GameInput> for GameState {
     type Response = ();
 
     fn handle(
         &mut self,
-        msg: Input,
-        ctx: ContextImmutHalf<Self>,
+        msg: GameInput,
+        ctx: &ContextImmutHalf<Self>,
     ) -> Self::Response
     {
-        self.pending_inputs.push(msg);
+        self.pending_inputs.push_front(msg);
     }
 }
 
