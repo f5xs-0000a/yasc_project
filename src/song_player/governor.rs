@@ -45,6 +45,16 @@ const DEFAULT_SLANT: Rad<f32> = Rad(0.6370451769779303); // Deg(36.5)
 const DEFAULT_ZOOM: f32 = -0.9765625;
 
 impl LaneGovernor {
+    pub(crate) fn debug_new() -> LaneGovernor {
+        LaneGovernor {
+            rotation_events: vec![],
+            slant_events:    vec![],
+            zoom_events:     vec![],
+
+            current_spin: None,
+        }
+    }
+
     pub fn get_rotation_adjustment(
         &self,
         time: &SongTime,

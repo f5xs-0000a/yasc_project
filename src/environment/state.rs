@@ -1,10 +1,13 @@
-use crate::environment::{
-    key_bindings::{
-        BindRoles,
-        ComposedKeystroke,
+use crate::{
+    environment::{
+        key_bindings::{
+            BindRoles,
+            ComposedKeystroke,
+        },
+        GameInput,
+        RenderRequest,
     },
-    GameInput,
-    RenderRequest,
+    song_player::governor::LaneGovernor,
 };
 use bidir_map::BidirMap;
 use fnv::FnvHashSet as HashSet;
@@ -97,12 +100,15 @@ impl GameState {
             SE::TitleScreen => {
                 if let Some(ref new_press) = &new_press {
                     if *new_press == B::Keyboard(K::Return) {
-                        self.state = SE::Song;
+                        // FIXME: remove this debug-only thingy
+                        let governor = LaneGovernor::debug_new();
+
+                        self.state = SE::Song(governor);
                     }
                 }
             },
 
-            SE::Song => {
+            SE::Song(ref governor) => {
                 // nope, nothing here for now
             },
 
@@ -178,7 +184,7 @@ impl Handles<GameInput> for GameState {
 pub enum StateEnum {
     TitleScreen,
     Settings,
-    Song,
+    Song(LaneGovernor),
 }
 
 ////////////////////////////////////////////////////////////////////////////////
