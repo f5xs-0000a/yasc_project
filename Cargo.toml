@@ -23,6 +23,7 @@
     camera_controllers = "*"
     cgmath = "*"
     lyon = "*"
+    num-traits = "*"
     viewport = { git = "https://github.com/f5xs-0000a/viewport.git" }
 
     # MULTITHREADING
