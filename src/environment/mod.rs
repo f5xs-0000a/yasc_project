@@ -3,7 +3,6 @@ pub mod state;
 
 ////////////////////////////////////////////////////////////////////////////////
 
-use gfx::Factory as _;
 use self::state::GameState;
 use futures::sync::mpsc::{
     Receiver,
@@ -19,11 +18,13 @@ use gfx::{
         RenderTargetView,
         Sampler,
     },
+    Factory as _,
 };
 use gfx_device_gl::{
     Factory,
     Resources,
 };
+use gfx_graphics::Gfx2d;
 use glutin_window::GlutinWindow;
 use parking_lot::Mutex;
 use piston_window::{
@@ -53,9 +54,9 @@ pub struct GamePrelude {
     window:  GlutinWindow,
     encoder: Arc<Mutex<GfxEncoder>>,
     //device: Device,
-    output_color:   RenderTargetView<Resources, Srgba8>,
+    output_color: RenderTargetView<Resources, Srgba8>,
     output_stencil: DepthStencilView<Resources, DepthStencil>,
-    //g2d: Gfx2d<Resources>,
+    g2d: Gfx2d<Resources>,
     // I don't know if we should wrap factory but we did anyway
     factory: Factory,
     // since calling Events::next() requires a &mut GlutinWindow, we place this
@@ -94,6 +95,7 @@ impl GamePrelude {
         let events = pistonwindow.events.lazy(true);
         let mut factory = pistonwindow.factory;
         let window = pistonwindow.window;
+        let g2d = pistonwindow.g2d;
 
         let state = GameState::start()
             .start_actor(Default::default(), threadpool.sender().clone());
@@ -109,13 +111,14 @@ impl GamePrelude {
             output_stencil,
             factory,
             events,
+            g2d,
 
             state,
             sampler,
         }
     }
 
-    pub fn spin(&mut self) {
+    pub fn spin_loop(&mut self) {
         use piston_window::{
             Event as E,
             Loop,
@@ -210,14 +213,13 @@ impl GamePrelude {
 }
 
 fn generate_sampler(factory: &mut Factory) -> Sampler<Resources> {
-    use gfx::texture::SamplerInfo;
-    use gfx::texture::FilterMethod;
-    use gfx::texture::WrapMode;
+    use gfx::texture::{
+        FilterMethod,
+        SamplerInfo,
+        WrapMode,
+    };
 
-    let info = SamplerInfo::new(
-        FilterMethod::Anisotropic(8),
-        WrapMode::Clamp,
-    );
+    let info = SamplerInfo::new(FilterMethod::Anisotropic(8), WrapMode::Clamp);
 
     factory.create_sampler(info)
 }

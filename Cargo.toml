@@ -9,6 +9,7 @@
     piston = "*"
     gfx = "0.17.1" # align with piston_window's version
     gfx_device_gl = "0.15.5" # align with piston_window's version
+    piston2d-gfx_graphics = "0.56.0" # align with piston_window's version
     shader_version = "*"
     piston_window = "*"
     image = "*"
