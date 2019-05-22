@@ -104,7 +104,7 @@ impl GamePrelude {
         let encoder = Arc::new(Mutex::new(pistonwindow.encoder));
         let output_color = pistonwindow.output_color;
         let output_stencil = pistonwindow.output_stencil;
-        let events = pistonwindow.events.lazy(true);
+        let events = pistonwindow.events;
         let mut factory = pistonwindow.factory;
         let window = pistonwindow.window;
         let g2d = pistonwindow.g2d;
