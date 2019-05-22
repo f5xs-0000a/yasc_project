@@ -5,17 +5,15 @@ pub mod state;
 ////////////////////////////////////////////////////////////////////////////////
 
 use self::state::GameState;
-use crate::environment::renderable::{
-    GenericInitializationRequest,
-    InitializationRequest,
-    InitializationUnit,
-    InitializationUnitOutput,
-};
-use futures::sync::mpsc::{
-    Receiver,
-    Sender,
-    UnboundedReceiver,
-    UnboundedSender,
+use crate::environment::renderable::GenericInitRequest;
+use futures::{
+    stream::Stream,
+    sync::mpsc::{
+        Receiver,
+        Sender,
+        UnboundedReceiver,
+        UnboundedSender,
+    },
 };
 use gfx::{
     format::{
@@ -75,9 +73,9 @@ pub struct GamePrelude {
 
     sampler: Sampler<Resources>,
 
-    iu_rx: UnboundedReceiver<GenericInitializationRequest>,
+    iu_rx: UnboundedReceiver<GenericInitRequest>,
     // this is meant to be cloned and sent to the game state
-    iu_tx: UnboundedSender<GenericInitializationRequest>,
+    iu_tx: UnboundedSender<GenericInitRequest>,
 }
 
 impl GamePrelude {
@@ -179,9 +177,23 @@ impl GamePrelude {
             input,
             time: Instant::now(),
             game_time: self.get_game_time(),
+            iu_tx: self.iu_tx.clone(),
         };
 
         let response = self.state.send(timed);
+    }
+
+    fn handle_persistent_init_requests(&mut self) {
+        use futures::Async::*;
+
+        loop {
+            match self.iu_rx.poll() {
+                Ok(Ready(Some(mut x))) => x.init_then_send(&mut self.factory),
+                Ok(Ready(None)) => unreachable!(),
+                Ok(NotReady) => break,
+                Err(_) => unreachable!(),
+            }
+        }
     }
 
     /*
@@ -271,9 +283,10 @@ pub struct RenderRequest {
 
 /// A message sent by the game prelude to the game state, telling that an input
 /// has been made, accompanied by the time when it was input, if available.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct GameInput {
     input:     Input,
     time:      Instant,
     game_time: (),
+    iu_tx:     UnboundedSender<GenericInitRequest>,
 }

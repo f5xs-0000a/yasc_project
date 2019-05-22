@@ -38,7 +38,6 @@ use std::{
 
 ////////////////////////////////////////////////////////////////////////////////
 
-#[derive(Debug)]
 pub struct GameState {
     keybindings: BidirMap<BindRoles, ComposedKeystroke>,
     state:       StateEnum,

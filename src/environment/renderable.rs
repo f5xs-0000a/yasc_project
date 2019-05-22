@@ -1,3 +1,4 @@
+use core::any::Any;
 use futures::sync::oneshot::{
     channel as oneshot_channel,
     Receiver as OneshotReceiver,
@@ -31,71 +32,83 @@ pub trait RenderUnit {
     );
 }
 
-pub trait InitializationUnit {
-    type Output: InitializationUnitOutput;
-
-    fn initialize(
-        self,
-        factory: &mut Factory,
-    ) -> Self::Output;
-}
-
-pub trait InitializationUnitOutput {}
-
-impl<T> InitializationUnitOutput for T {
-}
-
-pub trait InitializationRequestTrait<IU>
-where IU: InitializationUnit {
-    fn initialize_then_send(
-        &mut self,
-        factory: &mut Factory,
-    );
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 
-#[derive(Debug)]
-pub struct InitializationRequest<IU>
-where IU: InitializationUnit + Sized {
-    tx: Option<OneshotSender<IU::Output>>,
-    iu: Option<IU>,
+pub enum InitRequest<I, O>
+where
+    I: ?Sized,
+    O: ?Sized, {
+    Fulfilled,
+
+    Pending {
+        iu:   Box<I>,
+        tx:   OneshotSender<Box<O>>,
+        func: Box<Fn(Box<I>, &mut Factory) -> Box<O> + Send + Sync>,
+    },
 }
 
-impl<IU> InitializationRequest<IU>
-where IU: InitializationUnit
-{
-    pub fn new_with_receiver(
-        unit: IU
-    ) -> (InitializationRequest<IU>, OneshotReceiver<IU::Output>) {
+impl<I, O> InitRequest<I, O> {
+    pub fn new_with_receiver<F>(
+        func: F,
+        iu: I,
+    ) -> (InitRequest<I, O>, OneshotReceiver<Box<O>>)
+    where
+        F: Fn(Box<I>, &mut Factory) -> Box<O> + Send + Sync + 'static,
+    {
         let (tx, rx) = oneshot_channel();
 
-        let ir = InitializationRequest {
-            iu: Some(unit),
-            tx: Some(tx),
+        let ir = InitRequest::Pending {
+            func: Box::new(func),
+            iu: Box::new(iu),
+            tx,
         };
 
         (ir, rx)
     }
 }
 
-impl<IU> InitializationRequestTrait<IU> for InitializationRequest<IU>
-where IU: InitializationUnit
+impl<I, O> InitRequest<I, O>
+where
+    I: ?Sized,
+    O: ?Sized,
 {
-    fn initialize_then_send(
+    fn init_then_send(
         &mut self,
         factory: &mut Factory,
     )
     {
-        let tx = self.tx.take().unwrap();
-        let iu = self.iu.take().unwrap();
+        let mut swapped = InitRequest::Fulfilled;
+        std::mem::swap(self, &mut swapped);
 
-        tx.send(iu.initialize(factory));
+        match swapped {
+            InitRequest::Pending {
+                iu,
+                tx,
+                func,
+            } => {
+                tx.send((func)(iu, factory));
+            },
+
+            _ => {
+                // TODO: log unreachable in here.
+            },
+        }
     }
 }
 
-pub type GenericInitializationRequest = Box<
-    dyn InitializationRequestTrait<
-        InitializationUnit<Output = InitializationUnitOutput>,
-    >,
->;
+////////////////////////////////////////////////////////////////////////////////
+
+pub struct GenericInitRequest(
+    Box<InitRequest<dyn Send + Sync, dyn Send + Sync>>,
+);
+
+impl GenericInitRequest {
+    pub fn init_then_send(
+        &mut self,
+        factory: &mut Factory,
+    )
+    {
+        //InitRequestTrait::init_then_send(&mut *self.0, factory);
+        self.0.init_then_send(factory);
+    }
+}
