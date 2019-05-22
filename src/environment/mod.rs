@@ -1,12 +1,21 @@
 pub mod key_bindings;
+pub mod renderable;
 pub mod state;
 
 ////////////////////////////////////////////////////////////////////////////////
 
 use self::state::GameState;
+use crate::environment::renderable::{
+    GenericInitializationRequest,
+    InitializationRequest,
+    InitializationUnit,
+    InitializationUnitOutput,
+};
 use futures::sync::mpsc::{
     Receiver,
     Sender,
+    UnboundedReceiver,
+    UnboundedSender,
 };
 use gfx::{
     format::{
@@ -47,6 +56,8 @@ use tokio_threadpool::ThreadPool;
 
 ////////////////////////////////////////////////////////////////////////////////
 
+pub trait IUOutput {}
+
 pub struct GamePrelude {
     threadpool: ThreadPool,
 
@@ -57,15 +68,16 @@ pub struct GamePrelude {
     output_color: RenderTargetView<Resources, Srgba8>,
     output_stencil: DepthStencilView<Resources, DepthStencil>,
     g2d: Gfx2d<Resources>,
-    // I don't know if we should wrap factory but we did anyway
     factory: Factory,
-    // since calling Events::next() requires a &mut GlutinWindow, we place this
-    // here and rethink our life choices
     events: Events,
 
     state: Addr<GameState>,
 
     sampler: Sampler<Resources>,
+
+    iu_rx: UnboundedReceiver<GenericInitializationRequest>,
+    // this is meant to be cloned and sent to the game state
+    iu_tx: UnboundedSender<GenericInitializationRequest>,
 }
 
 impl GamePrelude {
@@ -101,6 +113,7 @@ impl GamePrelude {
             .start_actor(Default::default(), threadpool.sender().clone());
 
         let sampler = generate_sampler(&mut factory);
+        let (iu_tx, iu_rx) = futures::sync::mpsc::unbounded();
 
         GamePrelude {
             threadpool,
@@ -115,6 +128,9 @@ impl GamePrelude {
 
             state,
             sampler,
+
+            iu_tx,
+            iu_rx,
         }
     }
 
@@ -144,6 +160,10 @@ impl GamePrelude {
                 _ => {},
             } // match
         } // while
+
+        // TODO: create an update thingy, and handle updates such that for every
+        // update, you drain the receiver containing requests to initialize
+        // objects
     }
 
     fn get_game_time(&self) -> () {
@@ -212,6 +232,17 @@ impl GamePrelude {
     }
 }
 
+/*
+impl Handles<IU> for GamePrelude
+where IU: InitializationUnit {
+    type Response = IU::Output;
+
+    fn handle(&mut self, msg: IU, ctx: &ContextImmutHalf<Self>) -> Self::Response {
+        msg.initialize(&mut self.factory)
+    }
+}
+*/
+
 fn generate_sampler(factory: &mut Factory) -> Sampler<Resources> {
     use gfx::texture::{
         FilterMethod,
@@ -240,6 +271,7 @@ pub struct RenderRequest {
 
 /// A message sent by the game prelude to the game state, telling that an input
 /// has been made, accompanied by the time when it was input, if available.
+#[derive(Debug, Clone)]
 pub struct GameInput {
     input:     Input,
     time:      Instant,

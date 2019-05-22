@@ -38,6 +38,7 @@ use std::{
 
 ////////////////////////////////////////////////////////////////////////////////
 
+#[derive(Debug)]
 pub struct GameState {
     keybindings: BidirMap<BindRoles, ComposedKeystroke>,
     state:       StateEnum,
@@ -181,6 +182,7 @@ impl Handles<GameInput> for GameState {
 
 ////////////////////////////////////////////////////////////////////////////////
 
+#[derive(Debug)]
 pub enum StateEnum {
     TitleScreen,
     Settings,

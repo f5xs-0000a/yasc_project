@@ -353,3 +353,5 @@ fn get_default_first_person() -> FirstPerson {
         camera_controllers::FirstPersonSettings::keyboard_wasd(),
     )
 }
+
+////////////////////////////////////////////////////////////////////////////////
