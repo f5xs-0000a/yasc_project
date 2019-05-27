@@ -34,3 +34,29 @@ pub fn sigmoid<T>(x: T) -> T
 where T: Float + Neg + Add<T, Output = T> + One {
     (T::one() + (-x).exp()).recip()
 }
+
+pub fn block_fn<F, T>(f: F) -> T
+where F: FnOnce() -> T {
+    use tokio_threadpool::blocking;
+
+    // check if it is already available
+    match f.poll() {
+        Ok(futures::Async::Ready(smthng)) => return smthng,
+        Err(_) => unreachable!(),
+        _ => {},
+    }
+
+    // perform blocking
+    let blocker = blocking(f).expect(
+        "block_fn() must be called if the calling thread is on a ThreadPool.",
+    );
+
+    // extract data
+    match blocker {
+        futures::Async::Ready(smthng) => smthng,
+        _ => panic!(
+            "Maximum number of blocking threads reached!. You may want to \
+             consider increasing this."
+        ),
+    }
+}

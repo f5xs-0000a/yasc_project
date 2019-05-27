@@ -138,11 +138,14 @@ impl GamePrelude {
             Loop,
         };
 
+        let mut should_render = false;
+        let mut should_update = false;
+
         while let Some(e) = self.events.next(&mut self.window) {
             // handle the rendering of the game
             match &e {
                 E::Loop(Loop::Render(_)) => {
-                    self.render_procedure();
+                    should_render = true;
                     continue;
                 },
                 _ => {},
@@ -150,22 +153,36 @@ impl GamePrelude {
 
             match e {
                 // we already handled this
-                E::Loop(Loop::Render(_)) => unreachable!(),
+                E::Loop(Loop::Render(_)) => {
+                    should_render = true;
+                    // normally, this should be unreachable!(),
+                }
 
                 // handle the inputs of the game
                 E::Input(b) => self.handle_inputs(b),
 
-                _ => {},
-            } // match
-        } // while
+                // handle update requests by handling the initialization
+                // requests
+                E::Loop(Loop::Update(_)) => {
+                    should_update = true;
+                },
 
-        // TODO: create an update thingy, and handle updates such that for every
-        // update, you drain the receiver containing requests to initialize
-        // objects
+                _ => {},
+            }
+        }
+
+        // we focus on the update first
+        if should_update {
+            self.handle_persistent_init_requests();
+        }
+
+        if should_render {
+            self.render_procedure();
+        }
     }
 
     fn get_game_time(&self) -> () {
-        ()
+        () // unimplemented
     }
 
     fn handle_inputs(

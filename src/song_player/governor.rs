@@ -18,6 +18,244 @@ use cgmath::{
 
 ////////////////////////////////////////////////////////////////////////////////
 
+#[derive(Debug)]
+pub struct LGRenderRequest {
+    transform: Arc<Matrix4<f32>>,
+
+    lanes: OneshotReceiver<()>,
+    bt_chips: OneshotReceiver<()>,
+    bt_holds: OneshotReceiver<()>,
+    fx_chips: OneshotReceiver<()>,
+    fx_holds: OneshotReceiver<()>,
+    lasers: OneshotReceiver<()>,
+
+    vertex_buffer: unimplemented!(),
+}
+
+impl LGRenderRequest {
+    pub fn new(transform: Arc<Matrix4<f32>>) -> (
+        LGRenderRequest,
+        OneshotSender<()>, // lanes
+        OneshotSender<()>, // chip bts
+        OneshotSender<()>, // hold bts
+        OneshotSender<()>, // chip fxs
+        OneshotSender<()>, // hold fxs
+        OneshotSender<()>, // lasers
+    ) {
+        let lanes = channel();
+        let bt_chips = channel();
+        let bt_holds = channel();
+        let fx_chips = channel();
+        let fx_holds = channel();
+        let lasers = channel();
+
+        let lgrr = LGRenderRequest {
+           transform,
+           lanes.1,
+           bt_chips.1,
+           bt_holds.1,
+           fx_chips.1,
+           fx_holds.1,
+           lasers.1,
+        };
+
+        (lgrr, lanes.0, bt_chips.0, bt_holds.0, fx_chips.0, fx.holds.0, lasers.0)
+    }
+
+    fn create_render_target_texture(
+        &mut self,
+        factory: &mut Factory,
+    ) -> Texture<Resources, Srgba8> {
+        let kind = Kind::D2(unimplemented!(), unimplemented!(), Multi(4));
+        let levels = kind.get_num_levels();
+        let format = SurfaceType::R8_G8_B8_A8;
+        let bind = Bind::RENDER_TARGET;
+        let usage = Usage::Data;
+        let mut texture = factory.create_texture_raw(
+            Info {
+                kind,
+                levels,
+                format,
+                bind,
+                usage,
+            },
+        ).unwrap();
+    }
+
+    fn render_lanes(
+        self,
+        factory: &mut Factory,
+        window: &mut GlutinWindow;
+        lanes: Texture<Resources, Srgba8>,
+        lasers: Texture<Resources, Srgba8>,
+    ) -> {
+        // TODO: we can't be bothered to reinstantiate the vertices back to the
+        // GPU memory every time we are going to render. this is absolutely
+        // redundant. keep it sane next time.
+        let (vbuf, slice) = {
+            // declare the vertices of the square of the lanes
+            // front four, bl-br-tr-tl
+            // back four, bl-br-tr-tl
+            let vertices = vec![
+                    [-1., -1.],
+                    [1., -1.],
+                    [1., 1.],
+                    [-1., 1.],
+                ]
+                .into_iter()
+                .map(|p| Corner::new(p))
+                .collect::<Vec<_>>();
+
+            // declare the ordering of indices how we're going to render the
+            // triangle
+            let vert_order: &[u16] = &[0, 1, 2, 2, 3, 0];
+
+            // create the vertex buffer
+            factory.create_vertex_buffer_with_slice(&vertices, vert_order)
+        };
+
+        // the amount of the laser, starting from the judgment line, that will
+        // be shown to the player, since the notes and the lasers fall at
+        // different speeds.
+        //
+        // the lower the value, the faster the lasers will fall
+        const LASER_CUTOFF: f32 = 0.95;
+
+        // declare the data for the pipeline
+        let data = lane_pipe::Data {
+            vbuf:      self.vertex_buffer,
+            out_color: window.output_color.clone(),
+            transform: self.transform,
+            lanes_texture,
+            lasers_texture,
+            laser_cutoff: LASER_CUTOFF,
+        };
+
+        window.encoder.draw(&slice, &*get_pipeline(factory, glsl), &data);
+    }
+}
+
+impl RenderRequest for LGRenderRequest {
+    fn render(
+        self,
+        factory: &mut Factory,
+        window: &mut GlutinWindow;
+        g2d: &mut G2d<Resources>,
+        output_color: &RenderTargetView<Resources, Srgba8>,
+        output_stencil: &DepthStencilView<Resources, DepthStencil>,
+    ) {
+        // create a texture which will be utilized as a render target to render
+        // the lanes and everything on
+        let lane_texture = self.create_render_target_texture(factory);
+
+        // and another one for the lasers
+        let laser_texture = self.create_render_target_texture(factory);
+
+        {
+        // create a render target handle
+        let render_target = factory.view_texture_as_render_target(
+            &lane_texture,
+            lane_texture.levels, 
+            None,
+        ).unwrap();
+
+        // create another one for the lasers
+        let laser_render_target = factory.view_texture_as_render_target(
+            &laser_texture,
+            laser_texture.levels, 
+            None,
+        ).unwrap();
+
+        // bottom to top, this is the ordering of render:
+        // Lanes -> FX Hold -> BT Hold -> FX Chip -> BT Chip -> Laser
+
+        // render the lanes
+        block_fn(|| self.lanes.wait());
+            // .render(factory, g2d, &render_target, output_stencil);
+
+        // render the fx holds
+        block_fn(|| self.fx_holds.wait());
+            // .render(factory, g2d, &render_target, output_stencil);
+        
+        // render the bt holds
+        block_fn(|| self.bt_holds.wait());
+            // .render(factory, g2d, &render_target, output_stencil);
+        
+        // render the fx chips
+        block_fn(|| self.fx_chips.wait());
+            // .render(factory, g2d, &render_target, output_stencil);
+        
+        // render the bt chips
+        block_fn(|| self.bt_chips.wait());
+            // .render(factory, g2d, &render_target, output_stencil);
+        
+        // render the lasers
+        block_fn(|| self.lasers.wait());
+            // .render(factory, g2d, &laser_render_target, output_stencil);
+
+        // both render targets is dropped here
+        }
+
+        // then finally utilize the render target as a texture of a rectangle,
+        // which would then be rendered on the screen
+        self.render_lanes();
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+#[derive(Debug)]
+pub struct LaneGovernorInitRequest {
+    // keyframes
+    rotation_events: Vec<(SongTime, Keyframe<TransformationKFCurve>)>,
+    slant_events:    Vec<(SongTime, Keyframe<TransformationKFCurve>)>,
+    zoom_events:     Vec<(SongTime, Keyframe<TransformationKFCurve>)>,
+}
+
+fn fulfill_lane_governor_init_request(
+    request: Box<LaneGovernorInitRequest>,
+    factory: &mut Factory,
+) -> Box<LaneGovernor> {
+    // create the pipeline
+    let pipeline = factory.create_pipeline_simple(
+        Shaders::new()
+            .set(GLSL::V3_30, include_str!("shaders/lane_governor.vert.glsl"))
+            .get(glsl).unwrap().as_bytes(),
+        Shaders::enw()
+            .set(GLSL::V3_30, include_str!("shaders/lane_governor.frag.glsl"))
+            .get(glsl).unwrap().as_bytes(),
+        LaneGovernorRenderPipeline::new(),
+    );
+
+    Box::new(
+        LaneGovernor {
+            // keyframes
+            rotation_events: request.rotation_events,
+            slant_events:    request.slant_events,
+            zoom_events:     request.zoom_events,
+
+            // current spin
+            current_spin: None,
+
+            pipeline,
+        }
+    )
+}
+
+impl LaneGovernorInitRequest {
+    pub(crate) fn debug_new() -> LaneGovernor {
+        LaneGovernor {
+            rotation_events: vec![],
+            slant_events:    vec![],
+            zoom_events:     vec![],
+
+            current_spin: None,
+        }
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
 // TODO: maybe this should be an actor too since it handles renders and inputs?
 #[derive(Debug)]
 pub struct LaneGovernor {
@@ -34,6 +272,8 @@ pub struct LaneGovernor {
      *notes: Bt,
      *fx: Fx,
      *lasers: Lasers, */
+
+    pipeline: PipelineState<Resources, LaneGovernorRenderPipeline::Meta>,
 }
 
 // These constant values assume an FoV of Deg(90)
@@ -45,16 +285,6 @@ const DEFAULT_SLANT: Rad<f32> = Rad(0.6370451769779303); // Deg(36.5)
 const DEFAULT_ZOOM: f32 = -0.9765625;
 
 impl LaneGovernor {
-    pub(crate) fn debug_new() -> LaneGovernor {
-        LaneGovernor {
-            rotation_events: vec![],
-            slant_events:    vec![],
-            zoom_events:     vec![],
-
-            current_spin: None,
-        }
-    }
-
     pub fn get_rotation_adjustment(
         &self,
         time: &SongTime,
@@ -249,6 +479,23 @@ impl LaneGovernor {
         ) *
 
         post_mvp
+    }
+
+    fn emit_render_request(&self) -> LGRenderRequest {
+        let (
+            render_request,
+            lanes_sender,
+            chip_bt_sender,
+            hold_bt_sender,
+            chip_fx_sender,
+            hold_fx_sender,
+            laser_sender,
+        ) = LGRenderRequest::new();
+
+        // also send the request to the lanes, bt, fx, and lasers
+        // unimplemented!()
+
+        render_request
     }
 }
 

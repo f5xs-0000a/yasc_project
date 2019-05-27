@@ -81,6 +81,7 @@ impl GameState {
         let game_time = input.game_time;
         let time = input.time;
         let input = input.input;
+        let iu_tx = input.iu_tx;
 
         let mut new_press = None;
 
@@ -100,8 +101,15 @@ impl GameState {
             SE::TitleScreen => {
                 if let Some(ref new_press) = &new_press {
                     if *new_press == B::Keyboard(K::Return) {
-                        // FIXME: remove this debug-only thingy
-                        let governor = LaneGovernor::debug_new();
+                        // TODO: replace this soon.
+
+                        // request the main event loop to fulfill the
+                        // initialization for the lane governor
+                        let governor = request_initialization(
+                            LaneGovernorInitRequest::debug_new(),
+                            fulfill_lane_governor_init_request,
+                            &mut iu_tx,
+                        );
 
                         self.state = SE::Song(governor);
                     }

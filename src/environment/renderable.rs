@@ -22,10 +22,11 @@ use gfx_graphics::Gfx2d;
 
 ////////////////////////////////////////////////////////////////////////////////
 
-pub trait RenderUnit {
+pub trait RenderRequest: Send + Sync {
     fn render(
-        &self,
+        self,
         factory: &mut Factory,
+        window: &mut GlutinWindow;
         g2d: &mut Gfx2d<Resources>,
         output_color: &RenderTargetView<Resources, Srgba8>,
         output_stencil: &DepthStencilView<Resources, DepthStencil>,
@@ -38,13 +39,12 @@ pub enum InitRequest<I, O>
 where
     I: ?Sized,
     O: ?Sized, {
-    Fulfilled,
-
     Pending {
         iu:   Box<I>,
         tx:   OneshotSender<Box<O>>,
         func: Box<Fn(Box<I>, &mut Factory) -> Box<O> + Send + Sync>,
     },
+    Fulfilled,
 }
 
 impl<I, O> InitRequest<I, O> {
@@ -108,7 +108,21 @@ impl GenericInitRequest {
         factory: &mut Factory,
     )
     {
-        //InitRequestTrait::init_then_send(&mut *self.0, factory);
         self.0.init_then_send(factory);
     }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+pub fn request_initialization<I, O, F>(
+    func: F,
+    iu: I,
+    &mut iu_tx: UnboundedSender<GenericInitRequest>,
+) where F: Fn(Box<I>, &mut Factory) -> Box<O> + Send + Sync + 'static {
+    let (ir, rx) = GenericInitRequest(
+        Box::new(InitRequest::new_with_receiver(iu, func))
+    );
+    iu_tx.send(ir);
+
+    block_fn(|| rx.wait())
 }
