@@ -22,7 +22,7 @@ use gfx_graphics::Gfx2d;
 
 ////////////////////////////////////////////////////////////////////////////////
 
-pub trait RenderRequest: Send + Sync {
+pub trait RenderDetails: Send + Sync {
     fn render(
         self,
         factory: &mut Factory,
@@ -32,6 +32,37 @@ pub trait RenderRequest: Send + Sync {
         output_stencil: &DepthStencilView<Resources, DepthStencil>,
     );
 }
+
+/*
+pub trait RenderRequest {
+    //type RenderingActor: RenderingActor;
+}
+
+pub trait RenderActor: Actor {
+    type Request: RenderRequest;
+
+    fn render_handle(&mut self, msg: RR, ctx: &mut ContextImmutHalf<Self>) -> <Self as Actor>::Response {
+    }
+}
+
+impl<RA> Handles for RA
+where RA: RenderActor {
+    // unless future implementations say otherwise, a RenderActor does not have
+    // any response
+    // if there are conflicting future implementations, write it in the render
+    // actor trait and replace this response into
+    // `type Response = <Self as RenderActor>::Response;`
+    type Response = ();
+
+    fn handle(
+        &mut self,
+        msg: <Self as RenderActor>::Request,
+        ctx: &mut ContextImmutHalf<Self>
+    ) -> Self::Response {
+        self.render_handle(msg, ctx)
+    }
+}
+*/
 
 ////////////////////////////////////////////////////////////////////////////////
 
