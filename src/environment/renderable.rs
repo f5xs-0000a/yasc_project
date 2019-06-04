@@ -33,13 +33,14 @@ use gfx_graphics::Gfx2d;
 
 /// A trait for types that can be an actor and may need to use the Factory for
 /// some of the routines that require the use of Factory
-pub trait ActorWrapper: Send + Sync {
+pub trait ActorWrapper: Send + Sync + Sized {
     type Payload: Send + Sync;
     //type 
 
     fn update(
         &mut self,
         payload: UpdatePayload<Self::Payload>,
+        ctx: &ContextImmutHalf<WrappedActor<Self>>
     );
 
     fn on_start(&mut self, ctx: &ContextImmutHalf<WrappedActor<Self>>) {
@@ -116,41 +117,40 @@ where P: Send + Sync {
 
 #[derive(Debug, Clone)]
 pub struct WrappedActor<A>(pub A)
-where A: ActorWrapper;
+where A: ActorWrapper + 'static;
 
 impl<A> Actor for WrappedActor<A>
-where A: ActorWrapper {
+where A: ActorWrapper + 'static {
     fn on_start(&mut self, ctx: &ContextImmutHalf<Self>) {
         self.0.on_start(ctx);
     }
 
-    fn on_message_exhaust(&mut self, ctx: &ContextImmutHalf<WrappedActor<Self>>)
+    fn on_message_exhaust(&mut self, ctx: &ContextImmutHalf<Self>)
     {
         self.0.on_message_exhaust(ctx);
     }
 }
 
-/*
-impl<A> Handles<UpdatePayload<A::Payload>> for WrappedActor<A>
-where A: ActorWrapper {
+impl<A> HandlesWrapper<UpdatePayload<A::Payload>> for A
+where A: ActorWrapper + 'static {
     type Response = ();
 
     fn handle(
         &mut self,
         msg: UpdatePayload<A::Payload>,
-        ctx: &ContextImmutHalf<Self>
+        ctx: &ContextImmutHalf<WrappedActor<Self>>
     ) -> Self::Response {
-        self.0.update(msg, ctx);
+        self.update(msg, ctx);
     }
 }
-*/
 
 impl<A, T> Handles<T> for WrappedActor<A>
-where A: HandlesWrapper<T> {
+where A: HandlesWrapper<T>,
+      T: Send + Sync {
     type Response = A::Response;
 
     fn handle(&mut self, msg: T, ctx: &ContextImmutHalf<Self>) -> Self::Response {
-        self.0.handle(msg)
+        self.0.handle(msg, ctx)
     }
 }
 
@@ -163,16 +163,17 @@ where P: Send + Sync {
     payload: P,
 }
 
-/*
-impl<A> Handles<RenderPayload<<A as RenderableActorWrapper>::Payload>> for WrappedActor<A>
+impl<A> HandlesWrapper<RenderPayload<<A as RenderableActorWrapper>::Payload>> for A
 where A: RenderableActorWrapper {
     type Response = A::Details;
 
-    fn handle(&mut self, msg: RenderPayload<<A as RenderableActorWrapper>::Payload>, ctx: &ContextImmutHalf<Self>) -> Self::Response {
+    fn handle(
+        &mut self,
+        msg: RenderPayload<<A as RenderableActorWrapper>::Payload>,
+        ctx: &ContextImmutHalf<WrappedActor<Self>>) -> Self::Response {
         self.emit_render_details(msg, ctx)
     }
 }
-*/
 
 ////////////////////////////////////////////////////////////////////////////////
 
