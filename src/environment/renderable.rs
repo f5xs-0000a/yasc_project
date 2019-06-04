@@ -4,6 +4,7 @@ use futures::sync::oneshot::{
     Receiver as OneshotReceiver,
     Sender as OneshotSender,
 };
+
 use futures::sync::mpsc::UnboundedSender;
 use crate::utils::block_fn;
 use glutin_window::GlutinWindow;
@@ -12,6 +13,9 @@ use sekibanki::{
     Handles,
     ContextImmutHalf,
     Actor,
+    ActorBuilder,
+    Addr,
+    Sender as TPSender,
 };
 use gfx::{
     format::{
@@ -42,6 +46,14 @@ pub trait ActorWrapper: Send + Sync + Sized {
         payload: UpdatePayload<Self::Payload>,
         ctx: &ContextImmutHalf<WrappedActor<Self>>
     );
+
+    fn start_actor(
+        self,
+        builder: ActorBuilder,
+        pool: TPSender
+    ) -> Addr<WrappedActor<Self>> {
+        WrappedActor(self).start_actor(builder, pool)
+    }
 
     fn on_start(&mut self, ctx: &ContextImmutHalf<WrappedActor<Self>>) {
         // do nothing by default
