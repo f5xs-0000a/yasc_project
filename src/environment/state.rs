@@ -1,13 +1,10 @@
-use crate::{
-    environment::{
-        key_bindings::{
-            BindRoles,
-            ComposedKeystroke,
-        },
-        GameInput,
-        RenderRequest,
+use crate::environment::{
+    key_bindings::{
+        BindRoles,
+        ComposedKeystroke,
     },
-    //song_player::governor::LaneGovernor,
+    GameInput,
+    RenderRequest,
 };
 use bidir_map::BidirMap;
 use fnv::FnvHashSet as HashSet;

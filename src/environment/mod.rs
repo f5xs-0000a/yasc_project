@@ -156,7 +156,7 @@ impl GamePrelude {
                 E::Loop(Loop::Render(_)) => {
                     should_render = true;
                     // normally, this should be unreachable!(),
-                }
+                },
 
                 // handle the inputs of the game
                 E::Input(b) => self.handle_inputs(b),

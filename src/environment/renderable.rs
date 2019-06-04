@@ -5,18 +5,8 @@ use futures::sync::oneshot::{
     Sender as OneshotSender,
 };
 
-use futures::sync::mpsc::UnboundedSender;
 use crate::utils::block_fn;
-use glutin_window::GlutinWindow;
-use piston_window::Event;
-use sekibanki::{
-    Handles,
-    ContextImmutHalf,
-    Actor,
-    ActorBuilder,
-    Addr,
-    Sender as TPSender,
-};
+use futures::sync::mpsc::UnboundedSender;
 use gfx::{
     format::{
         DepthStencil,
@@ -32,6 +22,16 @@ use gfx_device_gl::{
     Resources,
 };
 use gfx_graphics::Gfx2d;
+use glutin_window::GlutinWindow;
+use piston_window::Event;
+use sekibanki::{
+    Actor,
+    ActorBuilder,
+    Addr,
+    ContextImmutHalf,
+    Handles,
+    Sender as TPSender,
+};
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -39,27 +39,35 @@ use gfx_graphics::Gfx2d;
 /// some of the routines that require the use of Factory
 pub trait ActorWrapper: Send + Sync + Sized {
     type Payload: Send + Sync;
-    //type 
+    //type
 
     fn update(
         &mut self,
         payload: UpdatePayload<Self::Payload>,
-        ctx: &ContextImmutHalf<WrappedActor<Self>>
+        ctx: &ContextImmutHalf<WrappedActor<Self>>,
     );
 
     fn start_actor(
         self,
         builder: ActorBuilder,
-        pool: TPSender
-    ) -> Addr<WrappedActor<Self>> {
+        pool: TPSender,
+    ) -> Addr<WrappedActor<Self>>
+    {
         WrappedActor(self).start_actor(builder, pool)
     }
 
-    fn on_start(&mut self, ctx: &ContextImmutHalf<WrappedActor<Self>>) {
+    fn on_start(
+        &mut self,
+        ctx: &ContextImmutHalf<WrappedActor<Self>>,
+    )
+    {
         // do nothing by default
     }
 
-    fn on_message_exhaust(&mut self, ctx: &ContextImmutHalf<WrappedActor<Self>>)
+    fn on_message_exhaust(
+        &mut self,
+        ctx: &ContextImmutHalf<WrappedActor<Self>>,
+    )
     {
         // do nothing by default
     }
@@ -74,7 +82,7 @@ where T: Send + Sync {
     fn handle(
         &mut self,
         msg: T,
-        ctx: &ContextImmutHalf<WrappedActor<Self>>
+        ctx: &ContextImmutHalf<WrappedActor<Self>>,
     ) -> Self::Response;
 }
 
@@ -96,27 +104,34 @@ pub trait RenderableActorWrapper: ActorWrapper {
 #[derive(Debug, Clone)]
 pub struct UpdatePayload<P>
 where P: Send + Sync {
-    event: Option<Event>,
-    tx: (), // unimplemented
+    event:   Option<Event>,
+    tx:      (), // unimplemented
     payload: P,
 }
 
 impl<P> UpdatePayload<P>
-where P: Send + Sync {
+where P: Send + Sync
+{
     pub fn new(
         event: Option<Event>,
         tx: (),
         payload: P,
-    ) -> UpdatePayload<P> {
+    ) -> UpdatePayload<P>
+    {
         UpdatePayload {
             event,
             tx,
-            payload
+            payload,
         }
     }
 
-    pub fn another<P2>(&self, payload: P2) -> UpdatePayload<P2>
-    where P2: Send + Sync {
+    pub fn another<P2>(
+        &self,
+        payload: P2,
+    ) -> UpdatePayload<P2>
+    where
+        P2: Send + Sync,
+    {
         UpdatePayload {
             event: self.event.clone(),
             tx: self.tx.clone(),
@@ -132,36 +147,53 @@ pub struct WrappedActor<A>(pub A)
 where A: ActorWrapper + 'static;
 
 impl<A> Actor for WrappedActor<A>
-where A: ActorWrapper + 'static {
-    fn on_start(&mut self, ctx: &ContextImmutHalf<Self>) {
+where A: ActorWrapper + 'static
+{
+    fn on_start(
+        &mut self,
+        ctx: &ContextImmutHalf<Self>,
+    )
+    {
         self.0.on_start(ctx);
     }
 
-    fn on_message_exhaust(&mut self, ctx: &ContextImmutHalf<Self>)
+    fn on_message_exhaust(
+        &mut self,
+        ctx: &ContextImmutHalf<Self>,
+    )
     {
         self.0.on_message_exhaust(ctx);
     }
 }
 
 impl<A> HandlesWrapper<UpdatePayload<A::Payload>> for A
-where A: ActorWrapper + 'static {
+where A: ActorWrapper + 'static
+{
     type Response = ();
 
     fn handle(
         &mut self,
         msg: UpdatePayload<A::Payload>,
-        ctx: &ContextImmutHalf<WrappedActor<Self>>
-    ) -> Self::Response {
+        ctx: &ContextImmutHalf<WrappedActor<Self>>,
+    ) -> Self::Response
+    {
         self.update(msg, ctx);
     }
 }
 
 impl<A, T> Handles<T> for WrappedActor<A>
-where A: HandlesWrapper<T>,
-      T: Send + Sync {
+where
+    A: HandlesWrapper<T>,
+    T: Send + Sync,
+{
     type Response = A::Response;
 
-    fn handle(&mut self, msg: T, ctx: &ContextImmutHalf<Self>) -> Self::Response {
+    fn handle(
+        &mut self,
+        msg: T,
+        ctx: &ContextImmutHalf<Self>,
+    ) -> Self::Response
+    {
         self.0.handle(msg, ctx)
     }
 }
@@ -171,18 +203,22 @@ where A: HandlesWrapper<T>,
 #[derive(Debug, Clone)]
 pub struct RenderPayload<P>
 where P: Send + Sync {
-    tx: (), // unimplemented
+    tx:      (), // unimplemented
     payload: P,
 }
 
-impl<A> HandlesWrapper<RenderPayload<<A as RenderableActorWrapper>::Payload>> for A
-where A: RenderableActorWrapper {
+impl<A> HandlesWrapper<RenderPayload<<A as RenderableActorWrapper>::Payload>>
+    for A
+where A: RenderableActorWrapper
+{
     type Response = A::Details;
 
     fn handle(
         &mut self,
         msg: RenderPayload<<A as RenderableActorWrapper>::Payload>,
-        ctx: &ContextImmutHalf<WrappedActor<Self>>) -> Self::Response {
+        ctx: &ContextImmutHalf<WrappedActor<Self>>,
+    ) -> Self::Response
+    {
         self.emit_render_details(msg, ctx)
     }
 }
@@ -285,10 +321,11 @@ pub fn request_initialization<I, O, F>(
     func: F,
     iu: I,
     &mut iu_tx: UnboundedSender<GenericInitRequest>,
-) where F: Fn(Box<I>, &mut Factory) -> Box<O> + Send + Sync + 'static {
-    let (ir, rx) = GenericInitRequest(
-        Box::new(InitRequest::new_with_receiver(iu, func))
-    );
+) where
+    F: Fn(Box<I>, &mut Factory) -> Box<O> + Send + Sync + 'static,
+{
+    let (ir, rx) =
+        GenericInitRequest(Box::new(InitRequest::new_with_receiver(iu, func)));
     iu_tx.send(ir);
 
     block_fn(|| rx.wait())

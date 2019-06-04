@@ -54,9 +54,11 @@ where F: FnOnce() -> T {
     // extract data
     match blocker {
         futures::Async::Ready(smthng) => smthng,
-        _ => panic!(
-            "Maximum number of blocking threads reached!. You may want to \
-             consider increasing this."
-        ),
+        _ => {
+            panic!(
+                "Maximum number of blocking threads reached!. You may want to \
+                 consider increasing this."
+            )
+        },
     }
 }
