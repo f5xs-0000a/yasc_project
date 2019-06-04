@@ -4,6 +4,15 @@ use futures::sync::oneshot::{
     Receiver as OneshotReceiver,
     Sender as OneshotSender,
 };
+use futures::sync::mpsc::UnboundedSender;
+use crate::utils::block_fn;
+use glutin_window::GlutinWindow;
+use piston_window::Event;
+use sekibanki::{
+    Handles,
+    ContextImmutHalf,
+    Actor,
+};
 use gfx::{
     format::{
         DepthStencil,
@@ -22,47 +31,161 @@ use gfx_graphics::Gfx2d;
 
 ////////////////////////////////////////////////////////////////////////////////
 
+/// A trait for types that can be an actor and may need to use the Factory for
+/// some of the routines that require the use of Factory
+pub trait ActorWrapper: Send + Sync {
+    type Payload: Send + Sync;
+    //type 
+
+    fn update(
+        &mut self,
+        payload: UpdatePayload<Self::Payload>,
+    );
+
+    fn on_start(&mut self, ctx: &ContextImmutHalf<WrappedActor<Self>>) {
+        // do nothing by default
+    }
+
+    fn on_message_exhaust(&mut self, ctx: &ContextImmutHalf<WrappedActor<Self>>)
+    {
+        // do nothing by default
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+pub trait HandlesWrapper<T>: ActorWrapper
+where T: Send + Sync {
+    type Response: Send + Sync;
+
+    fn handle(
+        &mut self,
+        msg: T,
+        ctx: &ContextImmutHalf<WrappedActor<Self>>
+    ) -> Self::Response;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+pub trait RenderableActorWrapper: ActorWrapper {
+    type Payload: Send + Sync;
+    type Details: RenderDetails;
+
+    fn emit_render_details(
+        &mut self,
+        payload: RenderPayload<<Self as RenderableActorWrapper>::Payload>,
+        ctx: &ContextImmutHalf<WrappedActor<Self>>,
+    ) -> Self::Details;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+#[derive(Debug, Clone)]
+pub struct UpdatePayload<P>
+where P: Send + Sync {
+    event: Option<Event>,
+    tx: (), // unimplemented
+    payload: P,
+}
+
+impl<P> UpdatePayload<P>
+where P: Send + Sync {
+    pub fn new(
+        event: Option<Event>,
+        tx: (),
+        payload: P,
+    ) -> UpdatePayload<P> {
+        UpdatePayload {
+            event,
+            tx,
+            payload
+        }
+    }
+
+    pub fn another<P2>(&self, payload: P2) -> UpdatePayload<P2>
+    where P2: Send + Sync {
+        UpdatePayload {
+            event: self.event.clone(),
+            tx: self.tx.clone(),
+            payload,
+        }
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+#[derive(Debug, Clone)]
+pub struct WrappedActor<A>(pub A)
+where A: ActorWrapper;
+
+impl<A> Actor for WrappedActor<A>
+where A: ActorWrapper {
+    fn on_start(&mut self, ctx: &ContextImmutHalf<Self>) {
+        self.0.on_start(ctx);
+    }
+
+    fn on_message_exhaust(&mut self, ctx: &ContextImmutHalf<WrappedActor<Self>>)
+    {
+        self.0.on_message_exhaust(ctx);
+    }
+}
+
+/*
+impl<A> Handles<UpdatePayload<A::Payload>> for WrappedActor<A>
+where A: ActorWrapper {
+    type Response = ();
+
+    fn handle(
+        &mut self,
+        msg: UpdatePayload<A::Payload>,
+        ctx: &ContextImmutHalf<Self>
+    ) -> Self::Response {
+        self.0.update(msg, ctx);
+    }
+}
+*/
+
+impl<A, T> Handles<T> for WrappedActor<A>
+where A: HandlesWrapper<T> {
+    type Response = A::Response;
+
+    fn handle(&mut self, msg: T, ctx: &ContextImmutHalf<Self>) -> Self::Response {
+        self.0.handle(msg)
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+#[derive(Debug, Clone)]
+pub struct RenderPayload<P>
+where P: Send + Sync {
+    tx: (), // unimplemented
+    payload: P,
+}
+
+/*
+impl<A> Handles<RenderPayload<<A as RenderableActorWrapper>::Payload>> for WrappedActor<A>
+where A: RenderableActorWrapper {
+    type Response = A::Details;
+
+    fn handle(&mut self, msg: RenderPayload<<A as RenderableActorWrapper>::Payload>, ctx: &ContextImmutHalf<Self>) -> Self::Response {
+        self.emit_render_details(msg, ctx)
+    }
+}
+*/
+
+////////////////////////////////////////////////////////////////////////////////
+
 pub trait RenderDetails: Send + Sync {
     fn render(
         self,
         factory: &mut Factory,
-        window: &mut GlutinWindow;
+        window: &mut GlutinWindow,
         g2d: &mut Gfx2d<Resources>,
         output_color: &RenderTargetView<Resources, Srgba8>,
         output_stencil: &DepthStencilView<Resources, DepthStencil>,
     );
 }
-
-/*
-pub trait RenderRequest {
-    //type RenderingActor: RenderingActor;
-}
-
-pub trait RenderActor: Actor {
-    type Request: RenderRequest;
-
-    fn render_handle(&mut self, msg: RR, ctx: &mut ContextImmutHalf<Self>) -> <Self as Actor>::Response {
-    }
-}
-
-impl<RA> Handles for RA
-where RA: RenderActor {
-    // unless future implementations say otherwise, a RenderActor does not have
-    // any response
-    // if there are conflicting future implementations, write it in the render
-    // actor trait and replace this response into
-    // `type Response = <Self as RenderActor>::Response;`
-    type Response = ();
-
-    fn handle(
-        &mut self,
-        msg: <Self as RenderActor>::Request,
-        ctx: &mut ContextImmutHalf<Self>
-    ) -> Self::Response {
-        self.render_handle(msg, ctx)
-    }
-}
-*/
 
 ////////////////////////////////////////////////////////////////////////////////
 

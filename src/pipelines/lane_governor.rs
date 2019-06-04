@@ -18,8 +18,8 @@ gfx_pipeline!( LaneGovernorRenderPipeline {
     lasers_cutoff: gfx::Global<f32> = "laser_cutoff",
 });
 
-gfx_vertex_struct!(Corner {
-    // the name must e the same as declared in the glslv file
+gfx_vertex_struct!( Corner {
+    // the name must be the same as declared in the glslv file
     vertex_pos: [f32; 2] = "vertex_pos",
 });
 

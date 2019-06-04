@@ -5,6 +5,7 @@ use crate::song_player::{
     },
     song_timer::SongTime,
 };
+use crate::pipelines::lane_governor::LaneGovernorRenderPipeline;
 use camera_controllers::FirstPerson;
 use cgmath::{
     Deg,
@@ -18,24 +19,36 @@ use cgmath::{
 
 ////////////////////////////////////////////////////////////////////////////////
 
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
+pub struct LGRenderRequest;
+
+////////////////////////////////////////////////////////////////////////////////
+
 #[derive(Debug)]
-pub struct LGRenderRequest {
+pub struct LGRenderDetails {
     transform: Arc<Matrix4<f32>>,
 
-    lanes: OneshotReceiver<()>,
+    lanes: OneshotReceiver<LanesRenderDetails>,
     bt_chips: OneshotReceiver<()>,
     bt_holds: OneshotReceiver<()>,
     fx_chips: OneshotReceiver<()>,
     fx_holds: OneshotReceiver<()>,
     lasers: OneshotReceiver<()>,
 
-    vertex_buffer: unimplemented!(),
+    pipeline: PipelineState<Resources, LaneGovernorRenderPipeline::Meta>,
+    vbuf: Buffer<Resources, Corner>,
+    slice: Slice<Resources>,
 }
 
-impl LGRenderRequest {
-    pub fn new(transform: Arc<Matrix4<f32>>) -> (
-        LGRenderRequest,
-        OneshotSender<()>, // lanes
+impl LGRenderDetails {
+    pub fn new(
+        transform: Arc<Matrix4<f32>>,
+        pipeline: PipelineState<Resources, LaneGovernorRenderPipeline::Meta>,
+        vbuf: Buffer<Resources, Corner>,
+        slice: Slice<Resources>,
+    ) -> (
+        LGRenderDetails,
+        OneshotSender<LanesRenderRequest>, // lanes
         OneshotSender<()>, // chip bts
         OneshotSender<()>, // hold bts
         OneshotSender<()>, // chip fxs
@@ -49,14 +62,14 @@ impl LGRenderRequest {
         let fx_holds = channel();
         let lasers = channel();
 
-        let lgrr = LGRenderRequest {
+        let lgrr = LGRenderDetails {
            transform,
-           lanes.1,
-           bt_chips.1,
-           bt_holds.1,
-           fx_chips.1,
-           fx_holds.1,
-           lasers.1,
+           lanes: lanes.1,
+           bt_chips: bt_chips.1,
+           bt_holds: bt_holds.1,
+           fx_chips: fx_chips.1,
+           fx_holds: fx_holds.1,
+           lasers: lasers.1,
         };
 
         (lgrr, lanes.0, bt_chips.0, bt_holds.0, fx_chips.0, fx.holds.0, lasers.0)
@@ -65,55 +78,31 @@ impl LGRenderRequest {
     fn create_render_target_texture(
         &mut self,
         factory: &mut Factory,
-    ) -> Texture<Resources, Srgba8> {
-        let kind = Kind::D2(unimplemented!(), unimplemented!(), Multi(4));
-        let levels = kind.get_num_levels();
-        let format = SurfaceType::R8_G8_B8_A8;
-        let bind = Bind::RENDER_TARGET;
-        let usage = Usage::Data;
-        let mut texture = factory.create_texture_raw(
-            Info {
-                kind,
-                levels,
-                format,
-                bind,
-                usage,
-            },
-        ).unwrap();
+        window: &GlutinWindow,
+    ) -> Option<Texture<Resources>> {
+        window.window
+            .get_inner_size(|(w, h)| {
+                let zero_all_image = ImageBuffer::new(
+                    w,
+                    h,
+                    |_, _| Rgba { data: 0. },
+                );
+
+                Texture::from_image(
+                    factory,
+                    zero_all_image,
+                    TextureSettings::new(),
+                )
+            })
     }
 
     fn render_lanes(
         self,
         factory: &mut Factory,
-        window: &mut GlutinWindow;
-        lanes: Texture<Resources, Srgba8>,
-        lasers: Texture<Resources, Srgba8>,
-    ) -> {
-        // TODO: we can't be bothered to reinstantiate the vertices back to the
-        // GPU memory every time we are going to render. this is absolutely
-        // redundant. keep it sane next time.
-        let (vbuf, slice) = {
-            // declare the vertices of the square of the lanes
-            // front four, bl-br-tr-tl
-            // back four, bl-br-tr-tl
-            let vertices = vec![
-                    [-1., -1.],
-                    [1., -1.],
-                    [1., 1.],
-                    [-1., 1.],
-                ]
-                .into_iter()
-                .map(|p| Corner::new(p))
-                .collect::<Vec<_>>();
-
-            // declare the ordering of indices how we're going to render the
-            // triangle
-            let vert_order: &[u16] = &[0, 1, 2, 2, 3, 0];
-
-            // create the vertex buffer
-            factory.create_vertex_buffer_with_slice(&vertices, vert_order)
-        };
-
+        window: &mut GlutinWindow,
+        lanes: Texture<Resources>,
+        lasers: Texture<Resources>,
+    ) {
         // the amount of the laser, starting from the judgment line, that will
         // be shown to the player, since the notes and the lasers fall at
         // different speeds.
@@ -122,7 +111,7 @@ impl LGRenderRequest {
         const LASER_CUTOFF: f32 = 0.95;
 
         // declare the data for the pipeline
-        let data = lane_pipe::Data {
+        let data = LaneGovernorRenderPipeline::Data {
             vbuf:      self.vertex_buffer,
             out_color: window.output_color.clone(),
             transform: self.transform,
@@ -135,11 +124,11 @@ impl LGRenderRequest {
     }
 }
 
-impl RenderRequest for LGRenderRequest {
+impl RenderDetails for LGRenderDetails {
     fn render(
         self,
         factory: &mut Factory,
-        window: &mut GlutinWindow;
+        window: &mut GlutinWindow,
         g2d: &mut G2d<Resources>,
         output_color: &RenderTargetView<Resources, Srgba8>,
         output_stencil: &DepthStencilView<Resources, DepthStencil>,
@@ -205,7 +194,7 @@ impl RenderRequest for LGRenderRequest {
 ////////////////////////////////////////////////////////////////////////////////
 
 #[derive(Debug)]
-pub struct LaneGovernorInitRequest {
+pub struct LGInitRequest {
     // keyframes
     rotation_events: Vec<(SongTime, Keyframe<TransformationKFCurve>)>,
     slant_events:    Vec<(SongTime, Keyframe<TransformationKFCurve>)>,
@@ -213,16 +202,36 @@ pub struct LaneGovernorInitRequest {
 }
 
 fn fulfill_lane_governor_init_request(
-    request: Box<LaneGovernorInitRequest>,
+    request: Box<LGInitRequest>,
     factory: &mut Factory,
 ) -> Box<LaneGovernor> {
+    let (vbuf, slice) = {
+        // declare the vertices of the square of the lanes
+        let vertices = vec![
+                [-1., -1.],
+                [1., -1.],
+                [1., 1.],
+                [-1., 1.],
+            ]
+            .into_iter()
+            .map(|p| Corner::new(p))
+            .collect::<Vec<_>>();
+
+        // declare the ordering of indices how we're going to render the
+        // triangle
+        let vert_order: &[u16] = &[0, 1, 2, 2, 3, 0];
+
+        // create the vertex buffer
+        factory.create_vertex_buffer_with_slice(&vertices, vert_order)
+    };
+
     // create the pipeline
     let pipeline = factory.create_pipeline_simple(
         Shaders::new()
-            .set(GLSL::V3_30, include_str!("shaders/lane_governor.vert.glsl"))
+            .set(GLSL::V3_30, include_str!("../shaders/lane_governor.vert.glsl"))
             .get(glsl).unwrap().as_bytes(),
         Shaders::enw()
-            .set(GLSL::V3_30, include_str!("shaders/lane_governor.frag.glsl"))
+            .set(GLSL::V3_30, include_str!("../shaders/lane_governor.frag.glsl"))
             .get(glsl).unwrap().as_bytes(),
         LaneGovernorRenderPipeline::new(),
     );
@@ -238,11 +247,13 @@ fn fulfill_lane_governor_init_request(
             current_spin: None,
 
             pipeline,
+            vbuf,
+            slice,
         }
     )
 }
 
-impl LaneGovernorInitRequest {
+impl LGInitRequest {
     pub(crate) fn debug_new() -> LaneGovernor {
         LaneGovernor {
             rotation_events: vec![],
@@ -274,6 +285,8 @@ pub struct LaneGovernor {
      *lasers: Lasers, */
 
     pipeline: PipelineState<Resources, LaneGovernorRenderPipeline::Meta>,
+    vbuf: Buffer<Resources, Corner>,
+    slice: Slice<Resources>,
 }
 
 // These constant values assume an FoV of Deg(90)
@@ -480,22 +493,41 @@ impl LaneGovernor {
 
         post_mvp
     }
+}
 
-    fn emit_render_request(&self) -> LGRenderRequest {
+impl Actor for LaneGovernor {
+}
+
+impl Handles<LGRenderRequest> for LaneGovernor {
+    type Response = LGRenderDetails;
+
+    fn handle(
+        &mut self,
+        _: LGRenderDetails,
+        _: &ContextImmutHalf<Self>
+    ) -> Self::Response {
+        // TODO: this None will be used in place of the actual song time for now
+        let song_time = (None).unwrap_or(SongTime(0));
+        let transform = Arc::new(self.calculate_matrix(&song_time));
+
         let (
-            render_request,
+            details,
             lanes_sender,
-            chip_bt_sender,
-            hold_bt_sender,
-            chip_fx_sender,
-            hold_fx_sender,
-            laser_sender,
-        ) = LGRenderRequest::new();
+            bt_chips_sender,
+            bt_holds_sender,
+            fx_chips_sender,
+            fx_holds_sender,
+            lasers_sender,
+        ) = LGRenderDetails::new(
+            transform.clone(),
+            self.pipeline.clone(),
+            self.vbuf.clone(),
+            self.slice.clone(),
+        );
 
-        // also send the request to the lanes, bt, fx, and lasers
-        // unimplemented!()
+        lanes_sender.send(LanesRenderRequest);
 
-        render_request
+        details
     }
 }
 

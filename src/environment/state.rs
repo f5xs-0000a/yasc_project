@@ -7,7 +7,7 @@ use crate::{
         GameInput,
         RenderRequest,
     },
-    song_player::governor::LaneGovernor,
+    //song_player::governor::LaneGovernor,
 };
 use bidir_map::BidirMap;
 use fnv::FnvHashSet as HashSet;
@@ -103,15 +103,19 @@ impl GameState {
                     if *new_press == B::Keyboard(K::Return) {
                         // TODO: replace this soon.
 
+                        /*
                         // request the main event loop to fulfill the
                         // initialization for the lane governor
                         let governor = request_initialization(
-                            LaneGovernorInitRequest::debug_new(),
+                            LGInitRequest::debug_new(),
                             fulfill_lane_governor_init_request,
                             &mut iu_tx,
                         );
 
                         self.state = SE::Song(governor);
+                        */
+
+                        unimplemented!();
                     }
                 }
             },
@@ -193,7 +197,7 @@ impl Handles<GameInput> for GameState {
 pub enum StateEnum {
     TitleScreen,
     Settings,
-    Song(LaneGovernor),
+    Song(()), //LaneGovernor),
 }
 
 ////////////////////////////////////////////////////////////////////////////////

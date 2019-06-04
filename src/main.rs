@@ -2,8 +2,8 @@
 extern crate gfx;
 
 mod environment;
-mod pipelines;
-mod song_player;
+//mod pipelines;
+//mod song_player;
 mod utils;
 
 use environment::GamePrelude;

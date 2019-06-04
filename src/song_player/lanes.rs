@@ -1,7 +1,26 @@
-pub struct LanesInitRequest;
+////////////////////////////////////////////////////////////////////////////////
+
+pub struct LanesInitRequest {
+    pub lane_image: DynamicImage,
+}
+
+impl LanesInitRequest {
+    pub fn new<S>(img_buf: &[u8]) -> ImageResult<LanesInitRequest> {
+        image::load_from_memory(img_buf)
+            .map(|lane_image| LanesInitRequest { lane_image })
+    }
+    
+    pub fn create_texture_buffer(self, factory: &mut Factory) -> Texture {
+        Texture::from_image(
+            factory,
+            self.lane_image.to_rgba(),
+            Texture_Settings::new(),
+        )
+    }
+}
 
 fn fulfill_lanes_init_request(
-    request: Box<LanesInitRequest>,
+    req: Box<LanesInitRequest>,
     factory: &mut Factory,
 ) -> Box<LaneGovernor> {
     // create the pipeline
@@ -34,18 +53,31 @@ fn fulfill_lanes_init_request(
     let (vertex_buffer, slice) =
         factory.create_vertex_buffer_with_slice(&vertices, vert_order);
 
+    // create the texture
+    let texture = self.create_texture_buffer(factory);
+
     Box::new(
         Lanes {
             pipeline,
             vertex_buffer,
             slice,
+            texture,
         }
     )
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub struct LanesRenderRequest {
+    respond_channel: OneshotSender<LanesRenderDetails>,
+    texture: Texture<Resources, Srgba8>,
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+#[derive(Debug)]
+pub struct LanesRenderDetails {
     pub vertex_buffer: Buffer<Resources, Vertex>,
     pub slice: Slice<Resources>,
     pub pipeline: PipelineState<Resources, LaneRenderPipeline::Meta>,
@@ -53,17 +85,46 @@ pub struct LanesRenderRequest {
     pub transform: Arc<Matrix4>,
 }
 
+impl RenderDetails for LanesRenderDetails {
+    fn render(
+        self,
+        factory: &mut Factory,
+        window: &mut GlutinWindow;
+        g2d: &mut Gfx2d<Resources>,
+        output_color: &RenderTargetView<Resources, Srgba8>,
+        output_stencil: &DepthStencilView<Resources, DepthStencil>,
+    ) {
+        // since we are rendering on a texture to be used by the governor (which
+        // will be the one utilizing the transformation matrices), we're not
+        // going to be using any transformation matrices
+    
+        // declare the data for the pipeline
+        let data = lane_pipe::Data {
+            vbuf:      self.vertex_buffer,
+            out_color: window.output_color.clone(),
+            transform: self.transform,
+            lanes_texture,
+            lasers_texture,
+            laser_cutoff: LASER_CUTOFF,
+        };
+    }
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 
+#[derive(Debug)]
 pub struct Lanes {
     vertex_buffer: Buffer<Resources, Vertex>,
     slice: Slice<Resources>,
-    pipeline: 
+    pipeline: PipelineState<Resources, LaneRenderPipeline::Meta>,
+
+    texture: Texture,
 }
 
-impl Lanes {
+impl Actor for Lanes {
 }
+
+impl Handle<
 
 // the texture of the lanes should not be located here. it should be located in
 // either Pipelines or Assets as the texture of the lanes persists throughout
