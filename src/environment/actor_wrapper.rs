@@ -1,3 +1,7 @@
+use core::ops::{
+    Deref,
+    DerefMut,
+};
 use gfx::{
     format::{
         DepthStencil,
@@ -35,14 +39,14 @@ pub trait ActorWrapper: Send + Sync + Sized {
         self,
         builder: ActorBuilder,
         pool: TPSender,
-    ) -> Addr<WrappedActor<Self>>
+    ) -> WrappedAddr<Self>
     {
         WrappedActor(self).start_actor(builder, pool)
     }
 
     fn on_start(
         &mut self,
-        ctx: &ContextImmutHalf<WrappedActor<Self>>,
+        ctx: &ContextWrapper<Self>,
     )
     {
         // do nothing by default
@@ -50,7 +54,7 @@ pub trait ActorWrapper: Send + Sync + Sized {
 
     fn on_message_exhaust(
         &mut self,
-        ctx: &ContextImmutHalf<WrappedActor<Self>>,
+        ctx: &ContextWrapper<Self>,
     )
     {
         // do nothing by default
@@ -59,7 +63,7 @@ pub trait ActorWrapper: Send + Sync + Sized {
     fn update(
         &mut self,
         payload: UpdatePayload<Self::Payload>,
-        ctx: &ContextImmutHalf<WrappedActor<Self>>,
+        ctx: &ContextWrapper<Self>,
     );
 }
 
@@ -72,7 +76,7 @@ where T: Send + Sync {
     fn handle(
         &mut self,
         msg: T,
-        ctx: &ContextImmutHalf<WrappedActor<Self>>,
+        ctx: &ContextWrapper<Self>,
     ) -> Self::Response;
 }
 
@@ -85,7 +89,7 @@ pub trait RenderableActorWrapper: ActorWrapper {
     fn emit_render_details(
         &mut self,
         payload: RenderPayload<<Self as RenderableActorWrapper>::Payload>,
-        ctx: &ContextImmutHalf<WrappedActor<Self>>,
+        ctx: &ContextWrapper<Self>,
     ) -> Self::Details;
 }
 
@@ -164,7 +168,7 @@ where A: ActorWrapper + 'static
     fn handle(
         &mut self,
         msg: UpdatePayload<A::Payload>,
-        ctx: &ContextImmutHalf<WrappedActor<Self>>,
+        ctx: &ContextWrapper<Self>,
     ) -> Self::Response
     {
         self.update(msg, ctx);
@@ -190,6 +194,13 @@ where
 
 ////////////////////////////////////////////////////////////////////////////////
 
+pub type WrappedAddr<A: 'static + ActorWrapper> = Addr<WrappedActor<A>>;
+
+pub type ContextWrapper<T: 'static + ActorWrapper> =
+    ContextImmutHalf<WrappedActor<T>>;
+
+////////////////////////////////////////////////////////////////////////////////
+
 #[derive(Debug, Clone)]
 pub struct RenderPayload<P>
 where P: Send + Sync {
@@ -206,7 +217,7 @@ where A: RenderableActorWrapper
     fn handle(
         &mut self,
         msg: RenderPayload<<A as RenderableActorWrapper>::Payload>,
-        ctx: &ContextImmutHalf<WrappedActor<Self>>,
+        ctx: &ContextWrapper<Self>,
     ) -> Self::Response
     {
         self.emit_render_details(msg, ctx)

@@ -6,7 +6,14 @@ pub mod update_routine;
 ////////////////////////////////////////////////////////////////////////////////
 
 use self::state::GameState;
-//use crate::environment::renderable::GenericInitRequest;
+use crate::environment::{
+    actor_wrapper::{
+        ActorWrapper as _,
+        ContextWrapper,
+        WrappedAddr,
+    },
+    update_routine::UpdateEnvelope,
+};
 use futures::{
     stream::Stream,
     sync::mpsc::{
@@ -70,12 +77,12 @@ pub struct GamePrelude {
     factory: Factory,
     events: Events,
 
-    state: Addr<GameState>,
+    state: WrappedAddr<GameState>,
 
     sampler: Sampler<Resources>,
-    /*iu_rx: UnboundedReceiver<GenericInitRequest>,
-     * this is meant to be cloned and sent to the game state
-     *iu_tx: UnboundedSender<GenericInitRequest>, */
+    iu_rx:   UnboundedReceiver<UpdateEnvelope>,
+    // below is meant to be cloned and sent to the game state
+    iu_tx: UnboundedSender<UpdateEnvelope>,
 }
 
 impl GamePrelude {
@@ -86,13 +93,12 @@ impl GamePrelude {
         let threadpool = ThreadPool::new();
 
         // declare which version of opengl to use
-        let opengl = piston_window::OpenGL::V3_3;
+        //let opengl = piston_window::OpenGL::V3_3;
 
         // we'll be changing the samples, and vsync soon using settings
         // declare the window
-        let mut pistonwindow: PistonWindow =
-            WindowSettings::new("YASC Project", [360, 360])
-                .opengl(opengl)
+        let mut pistonwindow: PistonWindow = WindowSettings::new("YASC Project", [360, 360])
+                //.opengl(opengl)
                 .srgb(true)
                 .samples(4)
                 .vsync(true)
@@ -111,7 +117,7 @@ impl GamePrelude {
             .start_actor(Default::default(), threadpool.sender().clone());
 
         let sampler = generate_sampler(&mut factory);
-        //let (iu_tx, iu_rx) = futures::sync::mpsc::unbounded();
+        let (iu_tx, iu_rx) = UpdateEnvelope::unbounded();
 
         GamePrelude {
             threadpool,
@@ -126,8 +132,8 @@ impl GamePrelude {
 
             state,
             sampler,
-            /*iu_tx,
-             *iu_rx, */
+            iu_tx,
+            iu_rx,
         }
     }
 
@@ -158,7 +164,8 @@ impl GamePrelude {
                 },
 
                 // handle the inputs of the game
-                E::Input(b) => self.handle_inputs(b),
+                // TODO: what does the Option<u32> pertain to? (second element)
+                E::Input(b, _) => self.handle_inputs(b),
 
                 // handle update requests by handling the initialization
                 // requests
@@ -172,7 +179,8 @@ impl GamePrelude {
 
         // we focus on the update first
         if should_update {
-            self.handle_persistent_init_requests();
+            //self.handle_persistent_init_requests();
+            unimplemented!();
         }
 
         if should_render {
@@ -193,12 +201,13 @@ impl GamePrelude {
             input,
             time: Instant::now(),
             game_time: self.get_game_time(),
-            //iu_tx: self.iu_tx.clone(),
+            iu_tx: self.iu_tx.clone(),
         };
 
         let response = self.state.send(timed);
     }
 
+    /*
     fn handle_persistent_init_requests(&mut self) {
         use futures::Async::*;
 
@@ -213,6 +222,7 @@ impl GamePrelude {
             */
         }
     }
+    */
 
     /*
     fn pre_render_procedure(&self) {
@@ -262,17 +272,6 @@ impl GamePrelude {
     }
 }
 
-/*
-impl Handles<IU> for GamePrelude
-where IU: InitializationUnit {
-    type Response = IU::Output;
-
-    fn handle(&mut self, msg: IU, ctx: &ContextImmutHalf<Self>) -> Self::Response {
-        msg.initialize(&mut self.factory)
-    }
-}
-*/
-
 fn generate_sampler(factory: &mut Factory) -> Sampler<Resources> {
     use gfx::texture::{
         FilterMethod,
@@ -306,5 +305,5 @@ pub struct GameInput {
     input:     Input,
     time:      Instant,
     game_time: (),
-    //iu_tx:     UnboundedSender<GenericInitRequest>,
+    iu_tx:     UnboundedSender<UpdateEnvelope>,
 }

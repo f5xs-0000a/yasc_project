@@ -9,15 +9,16 @@
     piston = "*"
     gfx = "0.17.1" # align with piston_window's version
     gfx_device_gl = "0.15.5" # align with piston_window's version
-    piston2d-gfx_graphics = "0.56.0" # align with piston_window's version
+    piston2d-gfx_graphics = "0.61.0" # align with piston_window's version
     shader_version = "*"
     piston_window = "*"
     image = "*"
-    pistoncore-glutin_window = "0.54.0" # align with piston_window's version
+    pistoncore-glutin_window = "0.59.0" # align with piston_window's version
 
     # MUSIC
     piston-music = "*"
     # we are going to use Faust for the effects
+    # on second thought, we may not...
 
     # CG MATHEMATICS
     camera_controllers = "*"
@@ -32,7 +33,7 @@
     futures = "0.1.26" # align with sekibanki's version
 
     # SCRIPTING
-    dyon = { version = "0.41.0", default-features = false }
+    gluon = "*"
 
     # UTILITIES
     bidir-map = "*"

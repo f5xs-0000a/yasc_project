@@ -1,4 +1,11 @@
 use crate::environment::{
+    actor_wrapper::{
+        ActorWrapper,
+        ContextWrapper,
+        HandlesWrapper,
+        UpdatePayload,
+        WrappedAddr,
+    },
     key_bindings::{
         BindRoles,
         ComposedKeystroke,
@@ -131,10 +138,21 @@ impl GameState {
     }
 }
 
-impl Actor for GameState {
+impl ActorWrapper for GameState {
+    type Payload = ();
+
+    fn update(
+        &mut self,
+        payload: UpdatePayload<Self::Payload>,
+        ctx: &ContextWrapper<Self>,
+    )
+    {
+        unimplemented!()
+    }
+
     fn on_message_exhaust(
         &mut self,
-        ctx: &ContextImmutHalf<Self>,
+        ctx: &ContextWrapper<Self>,
     )
     {
         use std::mem::swap;
@@ -165,7 +183,7 @@ impl Handles<RenderRequest> for GameState {
     fn handle(
         &mut self,
         msg: RenderRequest,
-        ctx: ContextImmutHalf<Self>,
+        ctx: ContextWrapper<Self>,
     ) -> Self::Response
     {
         let (tx, rx) = channel();
@@ -175,13 +193,13 @@ impl Handles<RenderRequest> for GameState {
 }
 */
 
-impl Handles<GameInput> for GameState {
+impl HandlesWrapper<GameInput> for GameState {
     type Response = ();
 
     fn handle(
         &mut self,
         msg: GameInput,
-        ctx: &ContextImmutHalf<Self>,
+        ctx: &ContextWrapper<Self>,
     ) -> Self::Response
     {
         self.pending_inputs.push_front(msg);

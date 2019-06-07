@@ -15,20 +15,8 @@ use glutin_window::GlutinWindow;
 
 ////////////////////////////////////////////////////////////////////////////////
 
-pub struct UpdateReceiver(UnboundedReceiver<UpdateEnvelope>);
-
-impl UpdateReceiver {
-    pub fn new() -> (UpdateReceiver, UnboundedSender<UpdateEnvelope>) {
-        let (tx, rx) = unbounded();
-
-        (UpdateReceiver(rx), tx)
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
 // analogue to EnvelopeInnerTrait
-trait UpdateEnvelopeInnerTrait {
+trait UpdateEnvelopeInnerTrait: Send {
     fn handle<'a>(
         &mut self,
         factory: &mut UnsendWindowParts<'a>,
@@ -91,6 +79,12 @@ impl UpdateEnvelope {
     )
     {
         self.0.handle(uwp);
+    }
+
+    pub fn unbounded(
+    ) -> (UnboundedSender<UpdateEnvelope>, UnboundedReceiver<UpdateEnvelope>)
+    {
+        unbounded()
     }
 }
 
