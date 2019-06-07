@@ -1,5 +1,6 @@
 pub mod key_bindings;
-pub mod renderable;
+pub mod actor_wrapper;
+pub mod update_routine;
 pub mod state;
 
 ////////////////////////////////////////////////////////////////////////////////

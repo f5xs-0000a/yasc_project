@@ -42,13 +42,6 @@ use sekibanki::{
 /// some of the routines that require the use of Factory
 pub trait ActorWrapper: Send + Sync + Sized {
     type Payload: Send + Sync;
-    //type
-
-    fn update(
-        &mut self,
-        payload: UpdatePayload<Self::Payload>,
-        ctx: &ContextImmutHalf<WrappedActor<Self>>,
-    );
 
     fn start_actor(
         self,
@@ -74,6 +67,12 @@ pub trait ActorWrapper: Send + Sync + Sized {
     {
         // do nothing by default
     }
+
+    fn update(
+        &mut self,
+        payload: UpdatePayload<Self::Payload>,
+        ctx: &ContextImmutHalf<WrappedActor<Self>>,
+    );
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -169,7 +168,6 @@ where A: ActorWrapper + 'static
     }
 }
 
-/*
 impl<A> HandlesWrapper<UpdatePayload<A::Payload>> for A
 where A: ActorWrapper + 'static
 {
@@ -184,7 +182,6 @@ where A: ActorWrapper + 'static
         self.update(msg, ctx);
     }
 }
-*/
 
 impl<A, T> Handles<T> for WrappedActor<A>
 where
@@ -243,166 +240,3 @@ pub trait RenderDetails: Send + Sync {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-pub struct UpdateReceiver(UnboundedReceiver<UpdateEnvelope>);
-
-pub struct UpdateEnvelope(Box<dyn UpdateEnvelopeInnerTrait>);
-
-// analogue to EnvelopeInnerTrait
-trait UpdateEnvelopeInnerTrait {
-    fn handle<'a>(&mut self, factory: &mut UnsendWindowParts<'a>);
-}
-
-// analogue to EnvelopeInner
-struct UpdateEnvelopeInner<M>
-where
-    M: CanBeWindowHandled,
-{
-    tx: Option<OneshotSender<M::Response>>,
-    msg: Option<M>,
-}
-
-impl<M> UpdateEnvelopeInner<M>
-where
-    M: CanBeWindowHandled,
-{
-    fn boxed_new(msg: M, tx: OneshotSender<M::Response>) -> Box<UpdateEnvelopeInner<M>> {
-        Box::new(UpdateEnvelopeInner {
-            tx: Some(tx),
-            msg: Some(msg),
-        })
-    }
-}
-
-impl<M> UpdateEnvelopeInnerTrait for UpdateEnvelopeInner<M>
-where
-    M: CanBeWindowHandled + Send,
-{
-    //type A = A;
-
-    fn handle<'a>(&mut self, wh: &mut UnsendWindowParts<'a>) {
-        /*
-        if let Some(msg) = self.msg.take() {
-            // let the actor handle the message
-            let response = actor.handle(msg, ctx);
-
-            // if we have a sender, we send the message
-            if let Some(tx) = self.tx.take() {
-                // don't care if it fails
-                tx.send(response);
-            }
-        }
-        */
-    }
-}
-
-// equivalent to an actor
-pub struct UnsendWindowParts<'a> {
-    factory: &'a mut Factory,
-    window: &'a mut GlutinWindow,
-}
-
-// equivalent to handles, only one implementor, and it blanket-implements
-trait WindowHandles<T>
-where T: Send {
-}
-
-impl<'a, T> WindowHandles<T> for UnsendWindowParts<'a>
-where T: CanBeWindowHandled + Send {
-}
-
-// many implementor, no analogue
-trait CanBeWindowHandled {
-    type Response: Send;
-
-    fn handle<'a>(self, uwp: &mut UnsendWindowParts<'a>) -> Self::Response;
-}
-
-/*
----- ATTEMPT 2019-06-05 ----
-
-pub trait InitRequestOutput: Send {
-}
-
-impl<T> InitRequestOutput for T
-where T: Send {
-}
-
-pub trait InitRequest: Send {
-    type Output: InitRequestOutput;
-
-    fn init(self, factory: &mut Factory) -> Self::Output;
-}
-
-pub struct InitRequestPayload<IR: ?Sized >
-where IR: InitRequest, {
-    tx: Option<OneshotSender<IR::Output>>,
-    func: Box<Fn(&IR, &mut Factory) -> IR::Output + Send>,
-    iu: IR,
-}
-
-impl<IR: ?Sized> InitRequestPayload<IR>
-where IR: InitRequest{
-    pub fn init_then_send(
-        &mut self,
-        factory: &mut Factory,
-    )
-    {
-        match self.tx.take() {
-            Some(tx) => { tx.send((self.func)(&self.iu, factory)); },
-            None => {},
-        }
-    }
-}
-
-pub type GenericInitRequest = Box<InitRequestPayload<dyn InitRequest<Output = dyn InitRequestOutput>>>;
-
-impl<IR> InitRequestPayload<IR>
-where IR: 'static + InitRequest,
-      IR::Output: 'static {
-    pub fn new_with_receiver<F>(
-        func: F,
-        iu: IR,
-    ) -> (Box<InitRequestPayload<dyn InitRequest<Output = dyn InitRequestOutput>>>,
-          OneshotReceiver<IR::Output>)
-    //) -> (Box<InitRequestPayload<IR>>, OneshotReceiver<IR::Output>)
-    where
-        F: 'static + Send + Fn(&IR, &mut Factory) -> IR::Output
-    {
-        let (tx, rx) = oneshot_channel();
-
-        let ir = InitRequestPayload {
-            func: Box::new(func),
-            iu,
-            tx: Some(tx),
-        };
-
-        (Box::new(ir), rx)
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
-pub fn unblocking_request_initialization<IR, F>(
-    func: F,
-    iu: IR,
-    iu_tx: &mut UnboundedSender<GenericInitRequest>,
-) -> Box<IR::Output>
-where
-    F: 'static + Send + Fn(&IR, &mut Factory) -> IR::Output,
-    IR: 'static + InitRequest,
-    IR::Output: ?Sized + 'static,
-{
-    let (ir, rx) = InitRequestPayload::new_with_receiver(func, iu);
-    something(iu_tx, ir);
-
-    Box::new(block_fn(|| rx.wait()).unwrap())
-}
-
-fn something<IR, F>(
-    iu_tx: &mut UnboundedSender<GenericInitRequest>,
-    ir: Box<InitRequestPayload<dyn InitRequest<Output = dyn InitRequestOutput>>>,
-)
-{
-    iu_tx.unbounded_send(ir);
-}
-*/
