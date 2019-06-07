@@ -4,39 +4,24 @@ use crate::environment::{
         ContextWrapper,
         HandlesWrapper,
         UpdatePayload,
-        WrappedAddr,
     },
     key_bindings::{
         BindRoles,
         ComposedKeystroke,
     },
     GameInput,
-    RenderRequest,
 };
 use bidir_map::BidirMap;
-use fnv::FnvHashSet as HashSet;
 use futures::{
     sink::Sink,
-    sync::mpsc::{
-        channel,
-        Receiver,
-        Sender,
-    },
+    sync::mpsc::Sender,
 };
 use piston_window::{
     Button,
     Input,
 };
-use sekibanki::{
-    Actor,
-    ContextImmutHalf,
-    Handles,
-};
 use std::{
-    collections::{
-        HashMap,
-        VecDeque,
-    },
+    collections::VecDeque,
     time::Instant,
 };
 
@@ -75,7 +60,6 @@ impl GameState {
             Button as B,
             ButtonState,
         };
-        use GameState as GS;
         use StateEnum as SE;
 
         // FIXME: honestly, I'm just waving in the dark in here. if anyone can

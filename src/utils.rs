@@ -1,4 +1,3 @@
-use futures::future::Future;
 use num_traits::{
     Float,
     One,

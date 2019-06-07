@@ -9,19 +9,13 @@ use self::state::GameState;
 use crate::environment::{
     actor_wrapper::{
         ActorWrapper as _,
-        ContextWrapper,
         WrappedAddr,
     },
     update_routine::UpdateEnvelope,
 };
-use futures::{
-    stream::Stream,
-    sync::mpsc::{
-        Receiver,
-        Sender,
-        UnboundedReceiver,
-        UnboundedSender,
-    },
+use futures::sync::mpsc::{
+    UnboundedReceiver,
+    UnboundedSender,
 };
 use gfx::{
     format::{
@@ -43,17 +37,12 @@ use gfx_graphics::Gfx2d;
 use glutin_window::GlutinWindow;
 use parking_lot::Mutex;
 use piston_window::{
-    EventLoop,
     Events,
     GfxEncoder,
     Input,
     PistonWindow,
 };
-use sekibanki::{
-    Actor,
-    Addr,
-    ResponseFuture,
-};
+use sekibanki::Actor as _;
 use std::{
     sync::Arc,
     time::Instant,
@@ -61,8 +50,6 @@ use std::{
 use tokio_threadpool::ThreadPool;
 
 ////////////////////////////////////////////////////////////////////////////////
-
-pub trait IUOutput {}
 
 pub struct GamePrelude {
     threadpool: ThreadPool,
@@ -80,7 +67,8 @@ pub struct GamePrelude {
     state: WrappedAddr<GameState>,
 
     sampler: Sampler<Resources>,
-    iu_rx:   UnboundedReceiver<UpdateEnvelope>,
+
+    iu_rx: UnboundedReceiver<UpdateEnvelope>,
     // below is meant to be cloned and sent to the game state
     iu_tx: UnboundedSender<UpdateEnvelope>,
 }
@@ -97,8 +85,8 @@ impl GamePrelude {
 
         // we'll be changing the samples, and vsync soon using settings
         // declare the window
-        let mut pistonwindow: PistonWindow = WindowSettings::new("YASC Project", [360, 360])
-                //.opengl(opengl)
+        let mut pistonwindow: PistonWindow =
+            WindowSettings::new("YASC Project", [360, 360])
                 .srgb(true)
                 .samples(4)
                 .vsync(true)
@@ -143,14 +131,11 @@ impl GamePrelude {
             Loop,
         };
 
-        let mut should_render = false;
-        let mut should_update = false;
-
         while let Some(e) = self.events.next(&mut self.window) {
             // handle the rendering of the game
             match &e {
                 E::Loop(Loop::Render(_)) => {
-                    should_render = true;
+                    self.render_procedure();
                     continue;
                 },
                 _ => {},
@@ -159,116 +144,107 @@ impl GamePrelude {
             match e {
                 // we already handled this
                 E::Loop(Loop::Render(_)) => {
-                    should_render = true;
+                    self.render_procedure();
                     // normally, this should be unreachable!(),
                 },
 
                 // handle the inputs of the game
                 // TODO: what does the Option<u32> pertain to? (second element)
-                E::Input(b, _) => self.handle_inputs(b),
+                E::Input(b, _) => self.input_procedure(b),
 
                 // handle update requests by handling the initialization
                 // requests
                 E::Loop(Loop::Update(_)) => {
-                    should_update = true;
+                    self.update_procedure();
                 },
 
                 _ => {},
             }
         }
+    }
 
-        // we focus on the update first
-        if should_update {
-            //self.handle_persistent_init_requests();
-            unimplemented!();
-        }
-
-        if should_render {
-            self.render_procedure();
+    fn get_game_time(&self) -> GameTime {
+        GameTime {
+            instant:   Instant::now(),
+            song_time: None,
         }
     }
 
-    fn get_game_time(&self) -> () {
-        () // unimplemented
-    }
-
-    fn handle_inputs(
+    fn input_procedure(
         &mut self,
         input: Input,
     )
     {
-        let timed = GameInput {
+        self.actual_update_procedure(Some(input));
+    }
+
+    fn update_procedure(&mut self) {
+        self.actual_update_procedure(None);
+    }
+
+    fn actual_update_procedure(
+        &mut self,
+        input: Option<Input>,
+    )
+    {
+        use futures::future::Either::*;
+
+        let payload = unimplemented!();
+
+        let sendable = UpdatePayload {
             input,
             time: Instant::now(),
             game_time: self.get_game_time(),
             iu_tx: self.iu_tx.clone(),
         };
 
-        let response = self.state.send(timed);
-    }
+        let response_fut = self.state.send(payload);
 
-    /*
-    fn handle_persistent_init_requests(&mut self) {
-        use futures::Async::*;
-
+        // now we wait for either the response or how much there is left in the
+        // iu_rx.
         loop {
-            /*
-            match self.iu_rx.poll() {
-                Ok(Ready(Some(mut x))) => x.init_then_send(&mut self.factory),
-                Ok(Ready(None)) => unreachable!(),
-                Ok(NotReady) => break,
+            let waitable = self
+                .iu_rx
+                .by_ref()
+                .into_future()
+                .select2(&mut response_fut)
+                .wait();
+
+            match waitable {
+                Ok(A(env)) => {
+                    let mut uwp = UnsendWindowParts {
+                        factory: &mut self.factory,
+                        window:  &mut self.window,
+                    };
+
+                    env.handle(&mut uwp);
+                },
+
+                Ok(B(response)) => { /* do nothing */ },
+
                 Err(_) => unreachable!(),
             }
-            */
         }
     }
-    */
 
-    /*
-    fn pre_render_procedure(&self) {
-        // The design philosophy behind the rendering is that we assume each
-        // groupable object that requires rendering to be an actor that will
-        // need their own independent computer. A message is sent to the actor,
-        // telling the actor to calculate is render state. After computing the
-        // state, it is sent back to the sender as a reply. The sender, given
-        // the render state, renders the frame.
-        //
-        // This results in the utilization of all cores of the CPU,
-        // theoretically yielding a faster rendering time, as compared to only
-        // a single core being bottlenecked with tasks.
-        //
-        // We also do this so that we would not starve the game state
-        // from its inputs. We need to have the most minimal delay between
-        // inputs and the game state update. After all, this is a rhythm game.
-        //
-        // The actor system is provided by Sekibanki.
-        // (the library, not the rokurokubi)
-
-        // the request for render state is sent to the game state, along
-        // with a copy of Factory
-        // the response is sent to the render helper, along with a copy
-        // of the encoder
-        // we do this so that we would not starve the game state from
-        // its inputs
-
-        // NOTE: in order to implement this, we have to take all the
-        // elements of Piston window to ourselves and wrap them however
-        // we want
-
-        let request = RenderRequest {
-            factory: self.factory.clone(),
-            output_color: self.output_color.clone(),
-            output_stencil: self.output_stencil.clone(),
-            time: self.get_game_time(),
+    fn render_procedure(&mut self) {
+        let payload = RenderPayload {
+            payload: (),
+            time:    self.get_game_time(),
         };
-        let response: () = self.state.send(request);
 
-        self.render_procedure(response);
-    }
-    */
-
-    fn render_procedure(&self) {
-        unimplemented!();
+        self.state
+            .send(payload)
+            .map(|response| {
+                response.render(
+                    &mut self.factory,
+                    &mut self.window,
+                    &mut self.g2d,
+                    &mut self.output_color,
+                    &mut self.output_stencil,
+                )
+            })
+            .wait();
     }
 }
 
@@ -306,4 +282,12 @@ pub struct GameInput {
     time:      Instant,
     game_time: (),
     iu_tx:     UnboundedSender<UpdateEnvelope>,
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+#[derive(Debug, Clone)]
+pub struct GameTime {
+    instant:   Instant,
+    song_time: Option<()>,
 }

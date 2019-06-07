@@ -1,7 +1,8 @@
-use core::ops::{
-    Deref,
-    DerefMut,
+use crate::environment::{
+    update_routine::UpdateEnvelope,
+    GameTime,
 };
+use futures::sync::mpsc::UnboundedSender;
 use gfx::{
     format::{
         DepthStencil,
@@ -46,7 +47,7 @@ pub trait ActorWrapper: Send + Sync + Sized {
 
     fn on_start(
         &mut self,
-        ctx: &ContextWrapper<Self>,
+        _ctx: &ContextWrapper<Self>,
     )
     {
         // do nothing by default
@@ -54,7 +55,7 @@ pub trait ActorWrapper: Send + Sync + Sized {
 
     fn on_message_exhaust(
         &mut self,
-        ctx: &ContextWrapper<Self>,
+        _ctx: &ContextWrapper<Self>,
     )
     {
         // do nothing by default
@@ -95,30 +96,18 @@ pub trait RenderableActorWrapper: ActorWrapper {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct UpdatePayload<P>
 where P: Send + Sync {
-    event:   Option<Event>,
-    tx:      (), // unimplemented
-    payload: P,
+    pub event:     Option<Event>,
+    pub tx:        UnboundedSender<UpdateEnvelope>,
+    pub game_time: GameTime,
+    pub payload:   P,
 }
 
 impl<P> UpdatePayload<P>
 where P: Send + Sync
 {
-    pub fn new(
-        event: Option<Event>,
-        tx: (),
-        payload: P,
-    ) -> UpdatePayload<P>
-    {
-        UpdatePayload {
-            event,
-            tx,
-            payload,
-        }
-    }
-
     pub fn another<P2>(
         &self,
         payload: P2,
@@ -129,6 +118,7 @@ where P: Send + Sync
         UpdatePayload {
             event: self.event.clone(),
             tx: self.tx.clone(),
+            game_time: self.game_time.clone(),
             payload,
         }
     }
@@ -204,8 +194,8 @@ pub type ContextWrapper<T: 'static + ActorWrapper> =
 #[derive(Debug, Clone)]
 pub struct RenderPayload<P>
 where P: Send + Sync {
-    tx:      (), // unimplemented
     payload: P,
+    time:    GameTime,
 }
 
 impl<A> HandlesWrapper<RenderPayload<<A as RenderableActorWrapper>::Payload>>
