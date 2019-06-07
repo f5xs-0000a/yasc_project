@@ -2,6 +2,7 @@ use num_traits::{
     Float,
     One,
 };
+use futures::future::Future;
 use std::ops::{
     Add,
     Div,
@@ -38,13 +39,6 @@ where T: Float + Neg + Add<T, Output = T> + One {
 pub fn block_fn<F, T>(f: F) -> T
 where F: FnOnce() -> T {
     use tokio_threadpool::blocking;
-
-    // check if it is already available
-    match f.poll() {
-        Ok(futures::Async::Ready(smthng)) => return smthng,
-        Err(_) => unreachable!(),
-        _ => {},
-    }
 
     // perform blocking
     let blocker = blocking(f).expect(

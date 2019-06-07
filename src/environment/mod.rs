@@ -5,7 +5,7 @@ pub mod state;
 ////////////////////////////////////////////////////////////////////////////////
 
 use self::state::GameState;
-use crate::environment::renderable::GenericInitRequest;
+//use crate::environment::renderable::GenericInitRequest;
 use futures::{
     stream::Stream,
     sync::mpsc::{
@@ -73,9 +73,9 @@ pub struct GamePrelude {
 
     sampler: Sampler<Resources>,
 
-    iu_rx: UnboundedReceiver<GenericInitRequest>,
+    //iu_rx: UnboundedReceiver<GenericInitRequest>,
     // this is meant to be cloned and sent to the game state
-    iu_tx: UnboundedSender<GenericInitRequest>,
+    //iu_tx: UnboundedSender<GenericInitRequest>,
 }
 
 impl GamePrelude {
@@ -111,7 +111,7 @@ impl GamePrelude {
             .start_actor(Default::default(), threadpool.sender().clone());
 
         let sampler = generate_sampler(&mut factory);
-        let (iu_tx, iu_rx) = futures::sync::mpsc::unbounded();
+        //let (iu_tx, iu_rx) = futures::sync::mpsc::unbounded();
 
         GamePrelude {
             threadpool,
@@ -127,8 +127,8 @@ impl GamePrelude {
             state,
             sampler,
 
-            iu_tx,
-            iu_rx,
+            //iu_tx,
+            //iu_rx,
         }
     }
 
@@ -194,7 +194,7 @@ impl GamePrelude {
             input,
             time: Instant::now(),
             game_time: self.get_game_time(),
-            iu_tx: self.iu_tx.clone(),
+            //iu_tx: self.iu_tx.clone(),
         };
 
         let response = self.state.send(timed);
@@ -204,12 +204,14 @@ impl GamePrelude {
         use futures::Async::*;
 
         loop {
+            /*
             match self.iu_rx.poll() {
                 Ok(Ready(Some(mut x))) => x.init_then_send(&mut self.factory),
                 Ok(Ready(None)) => unreachable!(),
                 Ok(NotReady) => break,
                 Err(_) => unreachable!(),
             }
+            */
         }
     }
 
@@ -305,5 +307,5 @@ pub struct GameInput {
     input:     Input,
     time:      Instant,
     game_time: (),
-    iu_tx:     UnboundedSender<GenericInitRequest>,
+    //iu_tx:     UnboundedSender<GenericInitRequest>,
 }
