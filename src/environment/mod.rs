@@ -1,7 +1,7 @@
-pub mod key_bindings;
 pub mod actor_wrapper;
-pub mod update_routine;
+pub mod key_bindings;
 pub mod state;
+pub mod update_routine;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -73,10 +73,9 @@ pub struct GamePrelude {
     state: Addr<GameState>,
 
     sampler: Sampler<Resources>,
-
-    //iu_rx: UnboundedReceiver<GenericInitRequest>,
-    // this is meant to be cloned and sent to the game state
-    //iu_tx: UnboundedSender<GenericInitRequest>,
+    /*iu_rx: UnboundedReceiver<GenericInitRequest>,
+     * this is meant to be cloned and sent to the game state
+     *iu_tx: UnboundedSender<GenericInitRequest>, */
 }
 
 impl GamePrelude {
@@ -127,9 +126,8 @@ impl GamePrelude {
 
             state,
             sampler,
-
-            //iu_tx,
-            //iu_rx,
+            /*iu_tx,
+             *iu_rx, */
         }
     }
 

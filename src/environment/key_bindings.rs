@@ -27,7 +27,6 @@ impl BindRoles {
     pub fn default_keyboard_binding() -> BidirMap<BindRoles, ComposedKeystroke>
     {
         use self::GeneralizedKeystroke as GK;
-        use piston_window::keyboard::Key;
         use BindRoles::*;
 
         let mut map = BidirMap::new();

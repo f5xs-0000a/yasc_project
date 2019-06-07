@@ -1,8 +1,8 @@
+use futures::future::Future;
 use num_traits::{
     Float,
     One,
 };
-use futures::future::Future;
 use std::ops::{
     Add,
     Div,

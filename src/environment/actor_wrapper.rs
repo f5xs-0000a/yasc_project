@@ -1,15 +1,3 @@
-use core::any::Any;
-use futures::sync::oneshot::{
-    channel as oneshot_channel,
-    Receiver as OneshotReceiver,
-    Sender as OneshotSender,
-};
-use futures::future::Future;
-use crate::utils::block_fn;
-use futures::sync::mpsc::{
-    UnboundedSender,
-    UnboundedReceiver,
-};
 use gfx::{
     format::{
         DepthStencil,
@@ -239,4 +227,3 @@ pub trait RenderDetails: Send + Sync {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-
