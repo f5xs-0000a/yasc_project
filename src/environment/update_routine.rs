@@ -59,23 +59,26 @@ trait UpdateEnvelopeInnerTrait {
 ////////////////////////////////////////////////////////////////////////////////
 
 // analogue to EnvelopeInner
-struct UpdateEnvelopeInner<M>
+struct UpdateEnvelopeInner<M>(Option<(OneshotSender<M::Response>, M)>)
 where
-    M: CanBeWindowHandled,
-{
-    tx: Option<OneshotSender<M::Response>>,
-    msg: Option<M>,
-}
+    M: CanBeWindowHandled;
+//{
+    //tx: Option<OneshotSender<M::Response>>,
+    //msg: Option<M>,
+//}
 
 impl<M> UpdateEnvelopeInner<M>
 where
     M: CanBeWindowHandled,
 {
     fn boxed_new(msg: M, tx: OneshotSender<M::Response>) -> Box<UpdateEnvelopeInner<M>> {
+        /*
         Box::new(UpdateEnvelopeInner {
             tx: Some(tx),
             msg: Some(msg),
         })
+        */
+        Box::new(UpdateEnvelopeInner(Some((tx, msg))))
     }
 }
 
@@ -84,6 +87,11 @@ where
     M: CanBeWindowHandled + Send,
 {
     fn handle<'a>(&mut self, wh: &'a mut UnsendWindowParts) {
+        if let Some((tx, msg)) = self.0.take() {
+            let response = WindowHandles::handle(wh, msg);
+            tx.send(response);
+        }
+        /*
         if let Some(msg) = self.msg.take() {
             // let the actor handle the message
             let response = WindowHandles::handle(wh, msg);
@@ -94,6 +102,7 @@ where
                 tx.send(response);
             }
         }
+        */
     }
 }
 
