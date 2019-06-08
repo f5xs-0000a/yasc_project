@@ -5,8 +5,11 @@ use core::ops::{
 
 ////////////////////////////////////////////////////////////////////////////////
 
+pub type SongTicker = i64;
+
+// NOTE: I forgot the reasoning behind i and not u
 #[derive(Hash, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct SongTime(pub isize);
+pub struct SongTime(pub i64);
 
 impl Add for SongTime {
     type Output = Self;

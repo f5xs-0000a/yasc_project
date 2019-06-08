@@ -16,7 +16,7 @@
     pistoncore-glutin_window = "0.59.0" # align with piston_window's version
 
     # MUSIC
-    piston-music = "*"
+    rodio = "*"
     # we are going to use Faust for the effects
     # on second thought, we may not...
 

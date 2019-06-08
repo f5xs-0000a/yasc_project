@@ -1,14 +1,18 @@
 #[macro_use]
 extern crate gfx;
+#[macro_use]
+extern crate lazy_static;
+
+////////////////////////////////////////////////////////////////////////////////
 
 mod environment;
-//mod pipelines;
-//mod song_player;
+mod pipelines;
+mod song_player;
 mod utils;
 
-use environment::GamePrelude;
+////////////////////////////////////////////////////////////////////////////////
 
 fn main() {
-    let mut prelude = GamePrelude::new();
+    let mut prelude = environment::GamePrelude::new();
     prelude.spin_loop();
 }

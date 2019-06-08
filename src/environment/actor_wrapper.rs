@@ -218,15 +218,19 @@ where A: RenderableActorWrapper
 
 ////////////////////////////////////////////////////////////////////////////////
 
-pub trait RenderDetails: Send + Sync {
-    fn render(
-        self,
-        factory: &mut Factory,
-        window: &mut GlutinWindow,
-        g2d: &mut Gfx2d<Resources>,
-        output_color: &RenderTargetView<Resources, Srgba8>,
-        output_stencil: &DepthStencilView<Resources, DepthStencil>,
-    );
+pub struct RenderWindowParts<'a> {
+    factory: &'a mut Factory,
+    window: &'a mut GlutinWindow,
+    g2d: &'a mut Gfx2d<Resources>,
+    output_color: &'a RenderTargetView<Resources, Srgba8>,
+    output_stencil: &'a DepthStencilView<Resources, DepthStencil>,
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+
+pub trait RenderDetails: Send + Sync {
+    fn render<'a>(
+        self,
+        rwp: RenderWindowParts<'a>,
+    );
+}

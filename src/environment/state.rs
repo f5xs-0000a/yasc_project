@@ -1,16 +1,20 @@
-use crate::environment::{
-    actor_wrapper::{
-        ActorWrapper,
-        ContextWrapper,
-        RenderDetails,
-        RenderPayload,
-        RenderableActorWrapper,
-        UpdatePayload,
+use crate::{
+    environment::{
+        actor_wrapper::{
+            ActorWrapper,
+            ContextWrapper,
+            RenderDetails,
+            RenderPayload,
+            RenderableActorWrapper,
+            UpdatePayload,
+            WrappedAddr,
+        },
+        key_bindings::{
+            BindRoles,
+            ComposedKeystroke,
+        },
     },
-    key_bindings::{
-        BindRoles,
-        ComposedKeystroke,
-    },
+    song_player::governor::LaneGovernor,
 };
 use bidir_map::BidirMap;
 use gfx::{
@@ -127,5 +131,5 @@ impl RenderDetails for GameStateRenderDetails {
 pub enum StateEnum {
     TitleScreen,
     Settings,
-    Song(()), //LaneGovernor),
+    Song(WrappedAddr<LaneGovernor>),
 }

@@ -28,10 +28,6 @@ trait UpdateEnvelopeInnerTrait: Send {
 // analogue to EnvelopeInner
 struct UpdateEnvelopeInner<M>(Option<(OneshotSender<M::Response>, M)>)
 where M: CanBeWindowHandled;
-//{
-//tx: Option<OneshotSender<M::Response>>,
-//msg: Option<M>,
-//}
 
 impl<M> UpdateEnvelopeInner<M>
 where M: CanBeWindowHandled
