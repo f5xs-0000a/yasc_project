@@ -9,6 +9,7 @@ use self::state::GameState;
 use crate::environment::{
     actor_wrapper::{
         ActorWrapper as _,
+        RenderDetails as _,
         RenderPayload,
         UpdatePayload,
         WrappedAddr,
@@ -65,17 +66,17 @@ pub struct GamePrelude {
 
     // we just extracted the fields of PistonWindow here and wrap some of them
     window:  GlutinWindow,
+    factory: Factory,
+    events:  Events,
+
     encoder: Arc<Mutex<GfxEncoder>>,
-    //device: Device,
     output_color: RenderTargetView<Resources, Srgba8>,
     output_stencil: DepthStencilView<Resources, DepthStencil>,
     g2d: Gfx2d<Resources>,
-    factory: Factory,
-    events: Events,
-
-    state: WrappedAddr<GameState>,
-
     sampler: Sampler<Resources>,
+
+    // the current state of the game, but only the address to the actor
+    state: WrappedAddr<GameState>,
 
     iu_rx: UnboundedReceiver<UpdateEnvelope>,
     // below is meant to be cloned and sent to the game state
@@ -194,6 +195,11 @@ impl GamePrelude {
             // likewise, map the error too
             .map_err(|cancel| B(cancel));
 
+        let mut uwp = UnsendWindowParts {
+            factory: &mut self.factory,
+            window:  &mut self.window,
+        };
+
         // now we wait for either the response or how much there is left in the
         // iu_rx.
         let mut waitable = self
@@ -207,11 +213,6 @@ impl GamePrelude {
         waitable.for_each(|select| {
             match select {
                 Ok(A(env)) => {
-                    let mut uwp = UnsendWindowParts {
-                        factory: &mut self.factory,
-                        window:  &mut self.window,
-                    };
-
                     env.handle(&mut uwp);
                 },
 
@@ -257,20 +258,8 @@ fn generate_sampler(factory: &mut Factory) -> Sampler<Resources> {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-/// A message sent by the game prelude to the game state, asking the state to
-/// produce its render state
-pub struct RenderRequest {
-    pub output_color:   RenderTargetView<Resources, Srgba8>,
-    pub output_stencil: DepthStencilView<Resources, DepthStencil>,
-
-    // we're going to implement time soon
-    pub time: (),
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
 #[derive(Debug, Clone)]
 pub struct GameTime {
-    instant:   Instant,
-    song_time: Option<()>,
+    pub instant:   Instant,
+    pub song_time: Option<()>,
 }

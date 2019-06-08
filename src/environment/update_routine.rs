@@ -119,8 +119,8 @@ where T: CanBeWindowHandled + Send {
 
 // equivalent to an actor
 pub struct UnsendWindowParts<'a> {
-    factory: &'a mut Factory,
-    window:  &'a mut GlutinWindow,
+    pub factory: &'a mut Factory,
+    pub window:  &'a mut GlutinWindow,
 }
 
 impl<'a, T> WindowHandles<T> for UnsendWindowParts<'a>

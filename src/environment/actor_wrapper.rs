@@ -199,8 +199,8 @@ pub type ContextWrapper<T: 'static + ActorWrapper> =
 #[derive(Debug, Clone)]
 pub struct RenderPayload<P>
 where P: Send + Sync {
-    payload: P,
-    time:    GameTime,
+    pub payload: P,
+    pub time:    GameTime,
 }
 
 impl<A> HandlesWrapper<RenderPayload<<A as RenderableActorWrapper>::Payload>>
