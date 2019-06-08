@@ -9,13 +9,22 @@ use self::state::GameState;
 use crate::environment::{
     actor_wrapper::{
         ActorWrapper as _,
+        RenderPayload,
+        UpdatePayload,
         WrappedAddr,
     },
-    update_routine::UpdateEnvelope,
+    update_routine::{
+        UnsendWindowParts,
+        UpdateEnvelope,
+    },
 };
-use futures::sync::mpsc::{
-    UnboundedReceiver,
-    UnboundedSender,
+use futures::{
+    future::Future as _,
+    stream::Stream,
+    sync::mpsc::{
+        UnboundedReceiver,
+        UnboundedSender,
+    },
 };
 use gfx::{
     format::{
@@ -132,15 +141,6 @@ impl GamePrelude {
         };
 
         while let Some(e) = self.events.next(&mut self.window) {
-            // handle the rendering of the game
-            match &e {
-                E::Loop(Loop::Render(_)) => {
-                    self.render_procedure();
-                    continue;
-                },
-                _ => {},
-            }
-
             match e {
                 // we already handled this
                 E::Loop(Loop::Render(_)) => {
@@ -150,12 +150,12 @@ impl GamePrelude {
 
                 // handle the inputs of the game
                 // TODO: what does the Option<u32> pertain to? (second element)
-                E::Input(b, _) => self.input_procedure(b),
+                E::Input(i, _) => self.update_procedure(Some(i)),
 
                 // handle update requests by handling the initialization
                 // requests
                 E::Loop(Loop::Update(_)) => {
-                    self.update_procedure();
+                    self.update_procedure(None);
                 },
 
                 _ => {},
@@ -170,47 +170,42 @@ impl GamePrelude {
         }
     }
 
-    fn input_procedure(
-        &mut self,
-        input: Input,
-    )
-    {
-        self.actual_update_procedure(Some(input));
-    }
-
-    fn update_procedure(&mut self) {
-        self.actual_update_procedure(None);
-    }
-
-    fn actual_update_procedure(
+    fn update_procedure(
         &mut self,
         input: Option<Input>,
     )
     {
         use futures::future::Either::*;
+        use piston_window::Event;
 
-        let payload = unimplemented!();
-
-        let sendable = UpdatePayload {
-            input,
-            time: Instant::now(),
+        let payload = UpdatePayload {
+            event:     input,
             game_time: self.get_game_time(),
-            iu_tx: self.iu_tx.clone(),
+            tx:        self.iu_tx.clone(),
+            payload:   (),
         };
 
-        let response_fut = self.state.send(payload);
+        let response_fut = self
+            .state
+            .send(payload)
+            // we map the response to an either so we can properly merge it with
+            // the iu_rx stream
+            .map(|response| B(response))
+            // likewise, map the error too
+            .map_err(|cancel| B(cancel));
 
         // now we wait for either the response or how much there is left in the
         // iu_rx.
-        loop {
-            let waitable = self
-                .iu_rx
-                .by_ref()
-                .into_future()
-                .select2(&mut response_fut)
-                .wait();
+        let mut waitable = self
+            .iu_rx
+            .by_ref()
+            .map(|env| A(env))
+            .map_err(|_| A(()))
+            .select(response_fut.into_stream())
+            .wait();
 
-            match waitable {
+        waitable.for_each(|select| {
+            match select {
                 Ok(A(env)) => {
                     let mut uwp = UnsendWindowParts {
                         factory: &mut self.factory,
@@ -220,11 +215,11 @@ impl GamePrelude {
                     env.handle(&mut uwp);
                 },
 
-                Ok(B(response)) => { /* do nothing */ },
+                Ok(B(response)) => return,
 
                 Err(_) => unreachable!(),
             }
-        }
+        });
     }
 
     fn render_procedure(&mut self) {
@@ -270,18 +265,6 @@ pub struct RenderRequest {
 
     // we're going to implement time soon
     pub time: (),
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
-/// A message sent by the game prelude to the game state, telling that an input
-/// has been made, accompanied by the time when it was input, if available.
-#[derive(Clone)]
-pub struct GameInput {
-    input:     Input,
-    time:      Instant,
-    game_time: (),
-    iu_tx:     UnboundedSender<UpdateEnvelope>,
 }
 
 ////////////////////////////////////////////////////////////////////////////////

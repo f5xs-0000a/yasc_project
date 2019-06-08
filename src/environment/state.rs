@@ -3,13 +3,13 @@ use crate::environment::{
         ActorWrapper,
         ContextWrapper,
         HandlesWrapper,
+        RenderableActorWrapper,
         UpdatePayload,
     },
     key_bindings::{
         BindRoles,
         ComposedKeystroke,
     },
-    GameInput,
 };
 use bidir_map::BidirMap;
 use futures::{
@@ -29,11 +29,7 @@ use std::{
 
 pub struct GameState {
     keybindings: BidirMap<BindRoles, ComposedKeystroke>,
-    state:       StateEnum,
-
-    requested_for_render: Option<Sender<()>>,
-    pending_inputs:       VecDeque<GameInput>,
-
+    state: StateEnum,
     buttons_pressed: Vec<(Button, Instant)>,
 }
 
@@ -43,16 +39,13 @@ impl GameState {
             // TODO: should be read from a config file
             keybindings: BindRoles::default_keyboard_binding(),
             state: StateEnum::TitleScreen,
-            requested_for_render: None,
-            // 8 is an arbitrary number
-            pending_inputs:  VecDeque::with_capacity(8),
             buttons_pressed: Vec::with_capacity(8),
         }
     }
 
+    /*
     pub fn handle_input(
         &mut self,
-        input: GameInput,
     )
     {
         use piston_window::{
@@ -120,6 +113,7 @@ impl GameState {
         // this place will be very messy for now
 
     }
+    */
 }
 
 impl ActorWrapper for GameState {
@@ -134,6 +128,7 @@ impl ActorWrapper for GameState {
         unimplemented!()
     }
 
+    /*
     fn on_message_exhaust(
         &mut self,
         ctx: &ContextWrapper<Self>,
@@ -158,6 +153,21 @@ impl ActorWrapper for GameState {
             tx.send(response);
         }
     }
+    */
+}
+
+impl RenderableActorWrapper for GameState {
+    type Details = ();
+    type Payload = ();
+
+    fn emit_render_details(
+        &mut self,
+        payload: (),
+        ctx: &ContextWrapper<Self>,
+    ) -> ()
+    {
+        unimplemented!()
+    }
 }
 
 /*
@@ -177,6 +187,7 @@ impl Handles<RenderRequest> for GameState {
 }
 */
 
+/*
 impl HandlesWrapper<GameInput> for GameState {
     type Response = ();
 
@@ -189,6 +200,7 @@ impl HandlesWrapper<GameInput> for GameState {
         self.pending_inputs.push_front(msg);
     }
 }
+*/
 
 ////////////////////////////////////////////////////////////////////////////////
 

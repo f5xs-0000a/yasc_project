@@ -19,7 +19,10 @@ use gfx_device_gl::{
 };
 use gfx_graphics::Gfx2d;
 use glutin_window::GlutinWindow;
-use piston_window::Event;
+use piston_window::{
+    Event,
+    Input,
+};
 use sekibanki::{
     Actor,
     ActorBuilder,
@@ -99,7 +102,7 @@ pub trait RenderableActorWrapper: ActorWrapper {
 #[derive(Clone)]
 pub struct UpdatePayload<P>
 where P: Send + Sync {
-    pub event:     Option<Event>,
+    pub event:     Option<Input>,
     pub tx:        UnboundedSender<UpdateEnvelope>,
     pub game_time: GameTime,
     pub payload:   P,
@@ -141,6 +144,7 @@ where A: ActorWrapper + 'static
         self.0.on_start(ctx);
     }
 
+    /*
     fn on_message_exhaust(
         &mut self,
         ctx: &ContextImmutHalf<Self>,
@@ -148,6 +152,7 @@ where A: ActorWrapper + 'static
     {
         self.0.on_message_exhaust(ctx);
     }
+    */
 }
 
 impl<A> HandlesWrapper<UpdatePayload<A::Payload>> for A
