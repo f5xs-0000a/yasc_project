@@ -52,7 +52,6 @@ use piston_window::{
     Input,
     PistonWindow,
 };
-use sekibanki::Actor as _;
 use std::{
     sync::Arc,
     time::Instant,
@@ -95,7 +94,7 @@ impl GamePrelude {
 
         // we'll be changing the samples, and vsync soon using settings
         // declare the window
-        let mut pistonwindow: PistonWindow =
+        let pistonwindow: PistonWindow =
             WindowSettings::new("YASC Project", [360, 360])
                 .srgb(true)
                 .samples(4)
@@ -177,7 +176,6 @@ impl GamePrelude {
     )
     {
         use futures::future::Either::*;
-        use piston_window::Event;
 
         let payload = UpdatePayload {
             event:     input,
@@ -202,7 +200,7 @@ impl GamePrelude {
 
         // now we wait for either the response or how much there is left in the
         // iu_rx.
-        let mut waitable = self
+        let waitable = self
             .iu_rx
             .by_ref()
             .map(|env| A(env))
@@ -216,7 +214,7 @@ impl GamePrelude {
                     env.handle(&mut uwp);
                 },
 
-                Ok(B(response)) => return,
+                Ok(B(_)) => return,
 
                 Err(_) => unreachable!(),
             }

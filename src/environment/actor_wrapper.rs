@@ -19,10 +19,7 @@ use gfx_device_gl::{
 };
 use gfx_graphics::Gfx2d;
 use glutin_window::GlutinWindow;
-use piston_window::{
-    Event,
-    Input,
-};
+use piston_window::Input;
 use sekibanki::{
     Actor,
     ActorBuilder,

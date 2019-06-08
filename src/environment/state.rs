@@ -2,7 +2,6 @@ use crate::environment::{
     actor_wrapper::{
         ActorWrapper,
         ContextWrapper,
-        HandlesWrapper,
         RenderDetails,
         RenderPayload,
         RenderableActorWrapper,
@@ -14,10 +13,6 @@ use crate::environment::{
     },
 };
 use bidir_map::BidirMap;
-use futures::{
-    sink::Sink,
-    sync::mpsc::Sender,
-};
 use gfx::{
     format::{
         DepthStencil,
@@ -26,9 +21,7 @@ use gfx::{
     handle::{
         DepthStencilView,
         RenderTargetView,
-        Sampler,
     },
-    Factory as _,
 };
 use gfx_device_gl::{
     Factory,
@@ -40,10 +33,7 @@ use piston_window::{
     Button,
     Input,
 };
-use std::{
-    collections::VecDeque,
-    time::Instant,
-};
+use std::time::Instant;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -70,7 +60,7 @@ impl ActorWrapper for GameState {
     fn update(
         &mut self,
         payload: UpdatePayload<Self::Payload>,
-        ctx: &ContextWrapper<Self>,
+        _: &ContextWrapper<Self>,
     )
     {
         use self::StateEnum::*;
@@ -106,7 +96,7 @@ impl RenderableActorWrapper for GameState {
     fn emit_render_details(
         &mut self,
         payload: RenderPayload<()>,
-        ctx: &ContextWrapper<Self>,
+        _: &ContextWrapper<Self>,
     ) -> Self::Details
     {
         GameStateRenderDetails {}
