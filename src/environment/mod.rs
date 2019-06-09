@@ -57,6 +57,7 @@ use std::{
     time::Instant,
 };
 use tokio_threadpool::ThreadPool;
+use shader_version::glsl::GLSL;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -73,6 +74,7 @@ pub struct GamePrelude {
     output_stencil: DepthStencilView<Resources, DepthStencil>,
     g2d: Gfx2d<Resources>,
     sampler: Sampler<Resources>,
+    shdr_ver: GLSL,
 
     // the current state of the game, but only the address to the actor
     state: WrappedAddr<GameState>,
@@ -109,6 +111,7 @@ impl GamePrelude {
         let mut factory = pistonwindow.factory;
         let window = pistonwindow.window;
         let g2d = pistonwindow.g2d;
+        let shdr_ver = GLSL::V3_30;
 
         let state = GameState::start()
             .start_actor(Default::default(), threadpool.sender().clone());
@@ -126,6 +129,7 @@ impl GamePrelude {
             factory,
             events,
             g2d,
+            shdr_ver,
 
             state,
             sampler,
@@ -254,6 +258,7 @@ pub struct RenderWindowParts<'a> {
     pub output_color: &'a RenderTargetView<Resources, Srgba8>,
     pub output_stencil: &'a DepthStencilView<Resources, DepthStencil>,
     pub encoder: Arc<Mutex<GfxEncoder>>,
+    pub shdr_ver: GLSL,
 }
 
 pub struct UpdateWindowParts<'a> {
@@ -270,6 +275,7 @@ impl<'a> RenderWindowParts<'a> {
             output_color: &mut gp.output_color,
             output_stencil: &mut gp.output_stencil,
             encoder: gp.encoder.clone(),
+            shdr_ver: gp.shdr_ver.clone(),
         }
     }
 }

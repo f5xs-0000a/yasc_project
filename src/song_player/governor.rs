@@ -9,6 +9,8 @@ use crate::{
             UpdatePayload,
         },
         RenderWindowParts,
+        update_routine::CanBeWindowHandled,
+        UpdateWindowParts,
     },
     pipelines::lane_governor::{
         Corner,
@@ -23,6 +25,7 @@ use crate::{
     },
     utils::block_fn,
 };
+use gfx_graphics::TextureContext;
 use camera_controllers::FirstPerson;
 use cgmath::{
     Deg,
@@ -144,16 +147,21 @@ impl LGRenderDetails {
         // creates a render target texture based on the current size of the
         // client window
 
-        rwp.window.window.get_inner_size(|(w, h)| {
-            let zero_all_image = ImageBuffer::new(w, h, |_, _| {
-                Rgba {
-                    data: 0.,
-                }
-            });
+        rwp.window
+            .window
+            .get_inner_size()
+            .map(|lz| (lz.width as u32, lz.height as u32))
+            .map(|(w, h)| {
+            let zero_image = ImageBuffer::new(w, h);
+    
+            let tx_ctx = TextureContext {
+                factory: rwp.factory,
+                encoder: (*rwp.encoder.lock()).clone(),
+            };
 
             Texture::from_image(
                 rwp.factory,
-                &zero_all_image,
+                &zero_image,
                 &TextureSettings::new(),
             )
         })
@@ -187,7 +195,7 @@ impl LGRenderDetails {
 
         encoder_lock.draw(
             &self.slice,
-            &*get_pipeline(rwp.factory, glsl),
+            &self.pipeline,
             &data,
         );
     }
@@ -282,79 +290,69 @@ pub struct LGInitRequest {
     zoom_events:     Vec<(SongTime, Keyframe<TransformationKFCurve>)>,
 }
 
-fn fulfill_lane_governor_init_request(
-    request: Box<LGInitRequest>,
-    factory: &mut Factory,
-) -> Box<LaneGovernor>
-{
-    use crate::pipelines::lane_governor::*;
+impl CanBeWindowHandled for LGInitRequest {
+    type Response = LaneGovernor;
 
-    let (vbuf, slice) = {
-        // declare the vertices of the square of the lanes
-        let vertices = vec![[-1., -1.], [1., -1.], [1., 1.], [-1., 1.]]
-            .into_iter()
-            .map(|p| Corner::new(p))
-            .collect::<Vec<_>>();
+    fn handle<'a>(
+        self,
+        uwp: &mut UpdateWindowParts<'a>,
+    ) -> Self::Response {
+        use crate::pipelines::lane_governor::*;
 
-        // declare the ordering of indices how we're going to render the
-        // triangle
-        let vert_order: &[u16] = &[0, 1, 2, 2, 3, 0];
+        let (vbuf, slice) = {
+            // declare the vertices of the square of the lanes
+            let vertices = vec![[-1., -1.], [1., -1.], [1., 1.], [-1., 1.]]
+                .into_iter()
+                .map(|p| Corner::new(p))
+                .collect::<Vec<_>>();
 
-        // create the vertex buffer
-        factory.create_vertex_buffer_with_slice(&vertices, vert_order)
-    };
+            // declare the ordering of indices how we're going to render the
+            // triangle
+            let vert_order: &[u16] = &[0, 1, 2, 2, 3, 0];
 
-    // create the pipeline
-    let pipeline = factory
-        .create_pipeline_simple(
-            Shaders::new()
-                .set(
-                    GLSL::V3_30,
-                    include_str!("../shaders/lane_governor.vert.glsl"),
-                )
-                .get(glsl)
-                .unwrap()
-                .as_bytes(),
-            Shaders::new()
-                .set(
-                    GLSL::V3_30,
-                    include_str!("../shaders/lane_governor.frag.glsl"),
-                )
-                .get(glsl)
-                .unwrap()
-                .as_bytes(),
-            LaneGovernorRenderPipeline::new(),
-        )
-        .unwrap();
+            // create the vertex buffer
+            uwp.factory.create_vertex_buffer_with_slice(&vertices, vert_order)
+        };
 
-    Box::new(LaneGovernor {
-        // keyframes
-        rotation_events: request.rotation_events,
-        slant_events: request.slant_events,
-        zoom_events: request.zoom_events,
+        // create the pipeline
+        let pipeline = uwp
+            .factory
+            .create_pipeline_simple(
+                Shaders::new()
+                    .set(
+                        GLSL::V3_30,
+                        include_str!("../shaders/lane_governor.vert.glsl"),
+                    )
+                    .get(uwp.glsl)
+                    .unwrap()
+                    .as_bytes(),
+                Shaders::new()
+                    .set(
+                        GLSL::V3_30,
+                        include_str!("../shaders/lane_governor.frag.glsl"),
+                    )
+                    .get(uwp.glsl)
+                    .unwrap()
+                    .as_bytes(),
+                LaneGovernorRenderPipeline::new(),
+            )
+            .unwrap();
 
-        // current spin
-        current_spin: None,
-
-        pipeline,
-        vbuf,
-        slice,
-    })
-}
-
-/*
-impl LGInitRequest {
-    pub(crate) fn debug_new() -> LaneGovernor {
         LaneGovernor {
-            rotation_events: vec![],
-            slant_events:    vec![],
-            zoom_events:     vec![],
+            // keyframes
+            rotation_events: self.rotation_events,
+            slant_events: self.slant_events,
+            zoom_events: self.zoom_events,
 
+            // current spin
             current_spin: None,
+
+            pipeline,
+            vbuf,
+            slice,
         }
     }
 }
-*/
 
 ////////////////////////////////////////////////////////////////////////////////
 
