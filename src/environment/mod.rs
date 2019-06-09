@@ -6,18 +6,18 @@ pub mod update_routine;
 ////////////////////////////////////////////////////////////////////////////////
 
 use self::state::GameState;
-use crate::environment::{
-    actor_wrapper::{
-        ActorWrapper as _,
-        RenderDetails as _,
-        RenderPayload,
-        UpdatePayload,
-        WrappedAddr,
+use crate::{
+    environment::{
+        actor_wrapper::{
+            ActorWrapper as _,
+            RenderDetails as _,
+            RenderPayload,
+            UpdatePayload,
+            WrappedAddr,
+        },
+        update_routine::UpdateEnvelope,
     },
-    update_routine::{
-        UnsendWindowParts,
-        UpdateEnvelope,
-    },
+    song_player::song_timer::SongTime,
 };
 use futures::{
     future::Future as _,
@@ -193,10 +193,7 @@ impl GamePrelude {
             // likewise, map the error too
             .map_err(|cancel| B(cancel));
 
-        let mut uwp = UnsendWindowParts {
-            factory: &mut self.factory,
-            window:  &mut self.window,
-        };
+        let mut uwp = UpdateWindowParts::from_game_prelude(self);
 
         // now we wait for either the response or how much there is left in the
         // iu_rx.
@@ -230,13 +227,7 @@ impl GamePrelude {
         self.state
             .send(payload)
             .map(|response| {
-                response.render(
-                    &mut self.factory,
-                    &mut self.window,
-                    &mut self.g2d,
-                    &mut self.output_color,
-                    &mut self.output_stencil,
-                )
+                response.render(RenderWindowParts::from_game_prelude(self))
             })
             .wait();
     }
@@ -256,8 +247,46 @@ fn generate_sampler(factory: &mut Factory) -> Sampler<Resources> {
 
 ////////////////////////////////////////////////////////////////////////////////
 
+pub struct RenderWindowParts<'a> {
+    pub factory: &'a mut Factory,
+    pub window: &'a mut GlutinWindow,
+    pub g2d: &'a mut Gfx2d<Resources>,
+    pub output_color: &'a RenderTargetView<Resources, Srgba8>,
+    pub output_stencil: &'a DepthStencilView<Resources, DepthStencil>,
+    pub encoder: Arc<Mutex<GfxEncoder>>,
+}
+
+pub struct UpdateWindowParts<'a> {
+    pub factory: &'a mut Factory,
+    pub window:  &'a mut GlutinWindow,
+}
+
+impl<'a> RenderWindowParts<'a> {
+    fn from_game_prelude(gp: &'a mut GamePrelude) -> RenderWindowParts<'a> {
+        RenderWindowParts {
+            factory: &mut gp.factory,
+            window: &mut gp.window,
+            g2d: &mut gp.g2d,
+            output_color: &mut gp.output_color,
+            output_stencil: &mut gp.output_stencil,
+            encoder: gp.encoder.clone(),
+        }
+    }
+}
+
+impl<'a> UpdateWindowParts<'a> {
+    fn from_game_prelude(gp: &'a mut GamePrelude) -> UpdateWindowParts<'a> {
+        UpdateWindowParts {
+            factory: &mut gp.factory,
+            window:  &mut gp.window,
+        }
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
 #[derive(Debug, Clone)]
 pub struct GameTime {
     pub instant:   Instant,
-    pub song_time: Option<()>,
+    pub song_time: Option<SongTime>,
 }

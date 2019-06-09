@@ -26,7 +26,7 @@ gfx_vertex_struct!(Corner {
 ////////////////////////////////////////////////////////////////////////////////
 
 impl Corner {
-    fn new(vertex_pos: [f32; 2]) -> Corner {
+    pub fn new(vertex_pos: [f32; 2]) -> Corner {
         Corner {
             vertex_pos,
         }

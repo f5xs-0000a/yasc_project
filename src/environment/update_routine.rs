@@ -1,3 +1,4 @@
+use crate::environment::UpdateWindowParts;
 use futures::sync::{
     mpsc::{
         unbounded,
@@ -10,8 +11,6 @@ use futures::sync::{
         Sender as OneshotSender,
     },
 };
-use gfx_device_gl::Factory;
-use glutin_window::GlutinWindow;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -19,7 +18,7 @@ use glutin_window::GlutinWindow;
 trait UpdateEnvelopeInnerTrait: Send {
     fn handle<'a>(
         &mut self,
-        factory: &mut UnsendWindowParts<'a>,
+        factory: &mut UpdateWindowParts<'a>,
     );
 }
 
@@ -47,7 +46,7 @@ where M: CanBeWindowHandled + Send
 {
     fn handle<'a>(
         &mut self,
-        wh: &'a mut UnsendWindowParts,
+        wh: &'a mut UpdateWindowParts,
     )
     {
         if let Some((tx, msg)) = self.0.take() {
@@ -71,7 +70,7 @@ impl UpdateEnvelope {
 
     pub fn handle<'a>(
         mut self,
-        uwp: &'a mut UnsendWindowParts,
+        uwp: &'a mut UpdateWindowParts,
     )
     {
         self.0.handle(uwp);
@@ -92,7 +91,7 @@ pub trait CanBeWindowHandled: 'static + Sized + Send {
 
     fn handle<'a>(
         self,
-        uwp: &mut UnsendWindowParts<'a>,
+        uwp: &mut UpdateWindowParts<'a>,
     ) -> Self::Response;
 
     fn wrap(self) -> (UpdateEnvelope, OneshotReceiver<Self::Response>) {
@@ -113,13 +112,7 @@ where T: CanBeWindowHandled + Send {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-// equivalent to an actor
-pub struct UnsendWindowParts<'a> {
-    pub factory: &'a mut Factory,
-    pub window:  &'a mut GlutinWindow,
-}
-
-impl<'a, T> WindowHandles<T> for UnsendWindowParts<'a>
+impl<'a, T> WindowHandles<T> for UpdateWindowParts<'a>
 where T: CanBeWindowHandled + Send
 {
     fn handle(

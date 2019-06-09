@@ -1,5 +1,15 @@
 use crate::{
-    environment::actor_wrapper::RenderDetails,
+    environment::{
+        actor_wrapper::{
+            ActorWrapper,
+            ContextWrapper,
+            RenderDetails,
+            RenderPayload,
+            RenderableActorWrapper,
+            UpdatePayload,
+        },
+        RenderWindowParts,
+    },
     pipelines::lane_governor::{
         Corner,
         LaneGovernorRenderPipeline,
@@ -11,6 +21,7 @@ use crate::{
         },
         song_timer::SongTime,
     },
+    utils::block_fn,
 };
 use camera_controllers::FirstPerson;
 use cgmath::{
@@ -22,19 +33,23 @@ use cgmath::{
     Rotation3,
     Vector3,
 };
-use futures::sync::oneshot::{
-    channel as oneshot,
-    Receiver as OneshotReceiver,
-    Sender as OneshotSender,
+use futures::{
+    future::Future as _,
+    sync::oneshot::{
+        channel as oneshot,
+        Receiver as OneshotReceiver,
+        Sender as OneshotSender,
+    },
 };
 use gfx::{
-    format::Srgba8,
+    handle::Buffer,
+    pso::PipelineState,
+    traits::FactoryExt as _,
+    Factory as _,
     Slice,
 };
 use gfx_device_gl::{
-    Buffer,
     Factory,
-    PipelineState,
     Resources,
 };
 use gfx_graphics::{
@@ -46,7 +61,6 @@ use image::{
     ImageBuffer,
     Rgba,
 };
-use piston_window::G2d;
 use shader_version::{
     glsl::GLSL,
     Shaders,
@@ -55,6 +69,7 @@ use std::sync::{
     atomic::{
         AtomicBool,
         AtomicI64,
+        AtomicU32,
     },
     Arc,
 };
@@ -110,6 +125,9 @@ impl LGRenderDetails {
             fx_chips: fx_chips.1,
             fx_holds: fx_holds.1,
             lasers: lasers.1,
+            pipeline,
+            vbuf,
+            slice,
         };
 
         (
@@ -118,29 +136,34 @@ impl LGRenderDetails {
         )
     }
 
-    fn create_render_target_texture(
+    fn create_render_target_texture<'a>(
         &mut self,
-        factory: &mut Factory,
-        window: &GlutinWindow,
+        rwp: &mut RenderWindowParts<'a>,
     ) -> Option<Texture<Resources>>
     {
-        window.window.get_inner_size(|(w, h)| {
+        // creates a render target texture based on the current size of the
+        // client window
+
+        rwp.window.window.get_inner_size(|(w, h)| {
             let zero_all_image = ImageBuffer::new(w, h, |_, _| {
                 Rgba {
                     data: 0.,
                 }
             });
 
-            Texture::from_image(factory, zero_all_image, TextureSettings::new())
+            Texture::from_image(
+                rwp.factory,
+                &zero_all_image,
+                &TextureSettings::new(),
+            )
         })
     }
 
-    fn render_lanes(
+    fn render_lanes<'a>(
         self,
-        factory: &mut Factory,
-        window: &mut GlutinWindow,
-        lanes: Texture<Resources>,
-        lasers: Texture<Resources>,
+        rwp: RenderWindowParts<'a>,
+        lanes_texture: Texture<Resources>,
+        lasers_texture: Texture<Resources>,
     )
     {
         // the amount of the laser, starting from the judgment line, that will
@@ -152,38 +175,50 @@ impl LGRenderDetails {
 
         // declare the data for the pipeline
         let data = LaneGovernorRenderPipeline::Data {
-            vbuf: self.vertex_buffer,
-            out_color: window.output_color.clone(),
-            transform: self.transform,
-            lanes,
-            lasers,
-            laser_cutoff: LASER_CUTOFF,
+            vbuf: self.vbuf,
+            out_color: rwp.output_color.clone(),
+            transform: (*self.transform).clone(),
+            lanes_texture,
+            lasers_texture,
+            lasers_cutoff: LASER_CUTOFF,
         };
 
-        window.encoder.draw(&self.slice, &*get_pipeline(factory, glsl), &data);
+        let mut encoder_lock = rwp.encoder.lock();
+
+        encoder_lock.draw(
+            &self.slice,
+            &*get_pipeline(rwp.factory, glsl),
+            &data,
+        );
     }
 }
 
 impl RenderDetails for LGRenderDetails {
-    fn render(
+    fn render<'a>(
         self,
-        factory: &mut Factory,
-        window: &mut GlutinWindow,
-        g2d: &mut G2d<Resources>,
-        output_color: &RenderTargetView<Resources, Srgba8>,
-        output_stencil: &DepthStencilView<Resources, DepthStencil>,
+        rwp: RenderWindowParts<'a>,
     )
     {
         // create a texture which will be utilized as a render target to render
         // the lanes and everything on
-        let lane_texture = self.create_render_target_texture(factory);
+        // NOTE: if a None is returned instead of a Some, it's a rare case of
+        // this function being called while the window has already been closed.
+        // Just simply do not continue any further if it is encountered.
+        let lane_texture = match self.create_render_target_texture(&mut rwp) {
+            Some(lt) => lt,
+            None => return,
+        };
 
         // and another one for the lasers
-        let laser_texture = self.create_render_target_texture(factory);
+        let laser_texture = match self.create_render_target_texture(&mut rwp) {
+            Some(lt) => lt,
+            None => return,
+        };
 
         {
             // create a render target handle
-            let render_target = factory
+            let render_target = rwp
+                .factory
                 .view_texture_as_render_target(
                     &lane_texture,
                     lane_texture.levels,
@@ -192,7 +227,8 @@ impl RenderDetails for LGRenderDetails {
                 .unwrap();
 
             // create another one for the lasers
-            let laser_render_target = factory
+            let laser_render_target = rwp
+                .factory
                 .view_texture_as_render_target(
                     &laser_texture,
                     laser_texture.levels,
@@ -232,7 +268,7 @@ impl RenderDetails for LGRenderDetails {
 
         // then finally utilize the render target as a texture of a rectangle,
         // which would then be rendered on the screen
-        self.render_lanes(factory, window, lane_texture, laser_texture);
+        self.render_lanes(rwp, lane_texture, laser_texture);
     }
 }
 
@@ -269,25 +305,27 @@ fn fulfill_lane_governor_init_request(
     };
 
     // create the pipeline
-    let pipeline = factory.create_pipeline_simple(
-        Shaders::new()
-            .set(
-                GLSL::V3_30,
-                include_str!("../shaders/lane_governor.vert.glsl"),
-            )
-            .get(glsl)
-            .unwrap()
-            .as_bytes(),
-        Shaders::enw()
-            .set(
-                GLSL::V3_30,
-                include_str!("../shaders/lane_governor.frag.glsl"),
-            )
-            .get(glsl)
-            .unwrap()
-            .as_bytes(),
-        LaneGovernorRenderPipeline::new(),
-    );
+    let pipeline = factory
+        .create_pipeline_simple(
+            Shaders::new()
+                .set(
+                    GLSL::V3_30,
+                    include_str!("../shaders/lane_governor.vert.glsl"),
+                )
+                .get(glsl)
+                .unwrap()
+                .as_bytes(),
+            Shaders::new()
+                .set(
+                    GLSL::V3_30,
+                    include_str!("../shaders/lane_governor.frag.glsl"),
+                )
+                .get(glsl)
+                .unwrap()
+                .as_bytes(),
+            LaneGovernorRenderPipeline::new(),
+        )
+        .unwrap();
 
     Box::new(LaneGovernor {
         // keyframes
@@ -304,6 +342,7 @@ fn fulfill_lane_governor_init_request(
     })
 }
 
+/*
 impl LGInitRequest {
     pub(crate) fn debug_new() -> LaneGovernor {
         LaneGovernor {
@@ -315,6 +354,7 @@ impl LGInitRequest {
         }
     }
 }
+*/
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -553,7 +593,7 @@ impl ActorWrapper for LaneGovernor {
         &mut self,
         _: UpdatePayload<Self::Payload>,
         _: &ContextWrapper<Self>,
-    ) -> Self::Response
+    )
     {
         // are we going to manually update anyway?
     }
@@ -565,17 +605,24 @@ impl RenderableActorWrapper for LaneGovernor {
 
     fn emit_render_details(
         &mut self,
-        _: (),
+        payload: RenderPayload<()>,
         _: &ContextWrapper<Self>,
     ) -> Self::Details
     {
-        let transform = self.calculate_matrix();
-        LGRenderDetails::new(
-            transform,
-            self.pipeline.clone(),
-            self.vbuf.clone(),
-            self.slice.clone(),
-        )
+        let song_time = payload.song_time.clone.unwrap_or(SongTime(0));
+        let transform = Arc::new(self.calculate_matrix(song_time));
+
+        let (details, lanes, chip_bt, hold_bt, chip_fx, hold_fx, lasers) =
+            LGRenderDetails::new(
+                transform.clone(),
+                self.pipeline.clone(),
+                self.vbuf.clone(),
+                self.slice.clone(),
+            );
+
+        // TODO: do something about the senders. actually send them data.
+
+        details
     }
 }
 
@@ -738,13 +785,19 @@ impl SongTimer {
 
     pub fn get_current_song_time(&self) -> Option<SongTime> {
         if self.is_some.load(Ordering::Relaxed) {
-            SongTime(self.counter.load(Ordering::Relaxed))
+            Some(SongTime(self.counter.load(Ordering::Relaxed)))
+        }
+        else {
+            None
         }
     }
 
     pub fn get_freq(&self) -> Option<u64> {
         if self.is_some.load(Ordering::Relaxed) {
-            SongTime(self.counter.load(Ordering::Relaxed))
+            Some(self.counter.load(Ordering::Relaxed))
+        }
+        else {
+            None
         }
     }
 
@@ -754,11 +807,17 @@ impl SongTimer {
         SongTimer {
             counter: AtomicI64::new(0),
             is_some: AtomicBool::new(false),
+            freq:    AtomicU32::new(0),
         }
     }
 
-    fn start(&self) {
-        self.is_some.store(true, Ordering::Relaxed);
+    fn start(
+        &self,
+        freq: u32,
+    )
+    {
+        self.is_some.store(true, Ordering::SeqCst);
+        self.freq.store(freq, Ordering::SeqCst);
     }
 
     fn reset(&self) {
@@ -766,9 +825,9 @@ impl SongTimer {
     }
 
     fn stop_and_reset(&self) {
-        self.is_some.store(false, Ordering::Relaxed);
-        self.counter.store(0, Ordering::Relaxed);
-        self.freq.store(0, Ordering::Relaxed);
+        self.is_some.store(false, Ordering::SeqCst);
+        self.counter.store(0, Ordering::SeqCst);
+        self.freq.store(0, Ordering::SeqCst);
     }
 
     fn increment(&self) {

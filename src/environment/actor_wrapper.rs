@@ -1,24 +1,9 @@
 use crate::environment::{
     update_routine::UpdateEnvelope,
     GameTime,
+    RenderWindowParts,
 };
 use futures::sync::mpsc::UnboundedSender;
-use gfx::{
-    format::{
-        DepthStencil,
-        Srgba8,
-    },
-    handle::{
-        DepthStencilView,
-        RenderTargetView,
-    },
-};
-use gfx_device_gl::{
-    Factory,
-    Resources,
-};
-use gfx_graphics::Gfx2d;
-use glutin_window::GlutinWindow;
 use piston_window::Input;
 use sekibanki::{
     Actor,
@@ -214,16 +199,6 @@ where A: RenderableActorWrapper
     {
         self.emit_render_details(msg, ctx)
     }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
-pub struct RenderWindowParts<'a> {
-    factory: &'a mut Factory,
-    window: &'a mut GlutinWindow,
-    g2d: &'a mut Gfx2d<Resources>,
-    output_color: &'a RenderTargetView<Resources, Srgba8>,
-    output_stencil: &'a DepthStencilView<Resources, DepthStencil>,
 }
 
 ////////////////////////////////////////////////////////////////////////////////

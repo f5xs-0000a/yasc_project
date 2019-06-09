@@ -13,26 +13,11 @@ use crate::{
             BindRoles,
             ComposedKeystroke,
         },
+        RenderWindowParts,
     },
     song_player::governor::LaneGovernor,
 };
 use bidir_map::BidirMap;
-use gfx::{
-    format::{
-        DepthStencil,
-        Srgba8,
-    },
-    handle::{
-        DepthStencilView,
-        RenderTargetView,
-    },
-};
-use gfx_device_gl::{
-    Factory,
-    Resources,
-};
-use gfx_graphics::Gfx2d;
-use glutin_window::GlutinWindow;
 use piston_window::{
     Button,
     Input,
@@ -112,13 +97,9 @@ impl RenderableActorWrapper for GameState {
 pub struct GameStateRenderDetails {}
 
 impl RenderDetails for GameStateRenderDetails {
-    fn render(
+    fn render<'a>(
         self,
-        factory: &mut Factory,
-        window: &mut GlutinWindow,
-        g2d: &mut Gfx2d<Resources>,
-        output_color: &RenderTargetView<Resources, Srgba8>,
-        output_stencil: &DepthStencilView<Resources, DepthStencil>,
+        _rwp: RenderWindowParts<'a>,
     )
     {
         // do nothing for now
@@ -127,8 +108,8 @@ impl RenderDetails for GameStateRenderDetails {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-#[derive(Debug)]
 pub enum StateEnum {
+    Uninitialized,
     TitleScreen,
     Settings,
     Song(WrappedAddr<LaneGovernor>),
