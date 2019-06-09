@@ -35,29 +35,26 @@ use gfx::{
     handle::{
         DepthStencilView,
         RenderTargetView,
-        Sampler,
     },
-    Factory as _,
 };
 use gfx_device_gl::{
+    CommandBuffer,
     Factory,
     Resources,
 };
-use gfx_graphics::Gfx2d;
+use gfx_graphics::{
+    Gfx2d,
+    TextureContext,
+};
 use glutin_window::GlutinWindow;
-use parking_lot::Mutex;
 use piston_window::{
     Events,
-    GfxEncoder,
     Input,
     PistonWindow,
 };
-use std::{
-    sync::Arc,
-    time::Instant,
-};
-use tokio_threadpool::ThreadPool;
 use shader_version::glsl::GLSL;
+use std::time::Instant;
+use tokio_threadpool::ThreadPool;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -66,20 +63,20 @@ pub struct GamePrelude {
 
     // we just extracted the fields of PistonWindow here and wrap some of them
     window:  GlutinWindow,
-    factory: Factory,
     events:  Events,
+    tex_ctx: TextureContext<Factory, Resources, CommandBuffer>,
 
-    encoder: Arc<Mutex<GfxEncoder>>,
     output_color: RenderTargetView<Resources, Srgba8>,
     output_stencil: DepthStencilView<Resources, DepthStencil>,
     g2d: Gfx2d<Resources>,
-    sampler: Sampler<Resources>,
     shdr_ver: GLSL,
 
     // the current state of the game, but only the address to the actor
     state: WrappedAddr<GameState>,
 
-    iu_rx: UnboundedReceiver<UpdateEnvelope>,
+    // Note: This is wrapped in Option so that we can take it out so that we
+    // can mut iu_rx AND GamePrelude at the same time
+    iu_rx: Option<UnboundedReceiver<UpdateEnvelope>>,
     // below is meant to be cloned and sent to the game state
     iu_tx: UnboundedSender<UpdateEnvelope>,
 }
@@ -104,37 +101,36 @@ impl GamePrelude {
                 .build()
                 .expect("Failed to create Piston window");
 
-        let encoder = Arc::new(Mutex::new(pistonwindow.encoder));
         let output_color = pistonwindow.output_color;
         let output_stencil = pistonwindow.output_stencil;
         let events = pistonwindow.events;
-        let mut factory = pistonwindow.factory;
         let window = pistonwindow.window;
         let g2d = pistonwindow.g2d;
         let shdr_ver = GLSL::V3_30;
+        let tex_ctx = TextureContext {
+            factory: pistonwindow.factory,
+            encoder: pistonwindow.encoder,
+        };
 
         let state = GameState::start()
             .start_actor(Default::default(), threadpool.sender().clone());
 
-        let sampler = generate_sampler(&mut factory);
         let (iu_tx, iu_rx) = UpdateEnvelope::unbounded();
 
         GamePrelude {
             threadpool,
 
             window,
-            encoder,
             output_color,
             output_stencil,
-            factory,
             events,
             g2d,
             shdr_ver,
+            tex_ctx,
 
             state,
-            sampler,
             iu_tx,
-            iu_rx,
+            iu_rx: Some(iu_rx),
         }
     }
 
@@ -197,29 +193,38 @@ impl GamePrelude {
             // likewise, map the error too
             .map_err(|cancel| B(cancel));
 
-        let mut uwp = UpdateWindowParts::from_game_prelude(self);
+        // temporarily take iu_rx from its container so we can build
+        // UpdateWindowParts
+        let mut iu_rx = self.iu_rx.take().unwrap();
 
-        // now we wait for either the response or how much there is left in the
-        // iu_rx.
-        let waitable = self
-            .iu_rx
-            .by_ref()
-            .map(|env| A(env))
-            .map_err(|_| A(()))
-            .select(response_fut.into_stream())
-            .wait();
+        {
+            let mut uwp = UpdateWindowParts::from_game_prelude(self);
 
-        waitable.for_each(|select| {
-            match select {
-                Ok(A(env)) => {
-                    env.handle(&mut uwp);
-                },
+            // now we wait for either the response or how much there is left in
+            // the iu_rx.
+            let waitable = iu_rx
+                .by_ref()
+                .map(|env| A(env))
+                .map_err(|_| A(()))
+                .select(response_fut.into_stream())
+                .wait();
 
-                Ok(B(_)) => return,
+            waitable.for_each(|select| {
+                match select {
+                    Ok(A(env)) => {
+                        env.handle(&mut uwp);
+                    },
 
-                Err(_) => unreachable!(),
-            }
-        });
+                    Ok(B(_)) => return,
+
+                    Err(_) => unreachable!(),
+                }
+            });
+        }
+
+        // and we put the iu_rx back, now that we're done using the
+        // UpdateWindowParts
+        self.iu_rx = Some(iu_rx);
     }
 
     fn render_procedure(&mut self) {
@@ -237,45 +242,32 @@ impl GamePrelude {
     }
 }
 
-fn generate_sampler(factory: &mut Factory) -> Sampler<Resources> {
-    use gfx::texture::{
-        FilterMethod,
-        SamplerInfo,
-        WrapMode,
-    };
-
-    let info = SamplerInfo::new(FilterMethod::Anisotropic(8), WrapMode::Clamp);
-
-    factory.create_sampler(info)
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 
 pub struct RenderWindowParts<'a> {
-    pub factory: &'a mut Factory,
     pub window: &'a mut GlutinWindow,
     pub g2d: &'a mut Gfx2d<Resources>,
     pub output_color: &'a RenderTargetView<Resources, Srgba8>,
     pub output_stencil: &'a DepthStencilView<Resources, DepthStencil>,
-    pub encoder: Arc<Mutex<GfxEncoder>>,
     pub shdr_ver: GLSL,
+    pub tex_ctx: &'a mut TextureContext<Factory, Resources, CommandBuffer>,
 }
 
 pub struct UpdateWindowParts<'a> {
     pub factory: &'a mut Factory,
     pub window:  &'a mut GlutinWindow,
+    pub glsl:    GLSL,
 }
 
 impl<'a> RenderWindowParts<'a> {
     fn from_game_prelude(gp: &'a mut GamePrelude) -> RenderWindowParts<'a> {
         RenderWindowParts {
-            factory: &mut gp.factory,
             window: &mut gp.window,
             g2d: &mut gp.g2d,
             output_color: &mut gp.output_color,
             output_stencil: &mut gp.output_stencil,
-            encoder: gp.encoder.clone(),
             shdr_ver: gp.shdr_ver.clone(),
+            tex_ctx: &mut gp.tex_ctx,
         }
     }
 }
@@ -283,8 +275,9 @@ impl<'a> RenderWindowParts<'a> {
 impl<'a> UpdateWindowParts<'a> {
     fn from_game_prelude(gp: &'a mut GamePrelude) -> UpdateWindowParts<'a> {
         UpdateWindowParts {
-            factory: &mut gp.factory,
+            factory: &mut gp.tex_ctx.factory,
             window:  &mut gp.window,
+            glsl:    gp.shdr_ver.clone(),
         }
     }
 }

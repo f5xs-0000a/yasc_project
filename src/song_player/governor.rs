@@ -8,8 +8,8 @@ use crate::{
             RenderableActorWrapper,
             UpdatePayload,
         },
-        RenderWindowParts,
         update_routine::CanBeWindowHandled,
+        RenderWindowParts,
         UpdateWindowParts,
     },
     pipelines::lane_governor::{
@@ -23,9 +23,10 @@ use crate::{
         },
         song_timer::SongTime,
     },
-    utils::block_fn,
+    utils::{
+        block_fn,
+    },
 };
-use gfx_graphics::TextureContext;
 use camera_controllers::FirstPerson;
 use cgmath::{
     Deg,
@@ -39,7 +40,6 @@ use cgmath::{
 use futures::{
     future::Future as _,
     sync::oneshot::{
-        channel as oneshot,
         Receiver as OneshotReceiver,
         Sender as OneshotSender,
     },
@@ -48,22 +48,14 @@ use gfx::{
     handle::Buffer,
     pso::PipelineState,
     traits::FactoryExt as _,
-    Factory as _,
     Slice,
 };
-use gfx_device_gl::{
-    Factory,
-    Resources,
-};
+use gfx_device_gl::Resources;
 use gfx_graphics::{
     Texture,
     TextureSettings,
 };
-use glutin_window::GlutinWindow;
-use image::{
-    ImageBuffer,
-    Rgba,
-};
+use image::ImageBuffer;
 use shader_version::{
     glsl::GLSL,
     Shaders,
@@ -73,6 +65,7 @@ use std::sync::{
         AtomicBool,
         AtomicI64,
         AtomicU32,
+        Ordering,
     },
     Arc,
 };
@@ -152,19 +145,15 @@ impl LGRenderDetails {
             .get_inner_size()
             .map(|lz| (lz.width as u32, lz.height as u32))
             .map(|(w, h)| {
-            let zero_image = ImageBuffer::new(w, h);
-    
-            let tx_ctx = TextureContext {
-                factory: rwp.factory,
-                encoder: (*rwp.encoder.lock()).clone(),
-            };
+                let zero_image = ImageBuffer::new(w, h);
 
-            Texture::from_image(
-                rwp.factory,
-                &zero_image,
-                &TextureSettings::new(),
-            )
-        })
+                Texture::from_image(
+                    rwp.tex_ctx,
+                    &zero_image,
+                    &TextureSettings::new(),
+                )
+                .unwrap()
+            })
     }
 
     fn render_lanes<'a>(
@@ -185,26 +174,20 @@ impl LGRenderDetails {
         let data = LaneGovernorRenderPipeline::Data {
             vbuf: self.vbuf,
             out_color: rwp.output_color.clone(),
-            transform: (*self.transform).clone(),
-            lanes_texture,
-            lasers_texture,
+            transform: (*self.transform).clone().into(),
+            lanes_texture: (lanes_texture.view, lanes_texture.sampler),
+            lasers_texture: (lasers_texture.view, lasers_texture.sampler),
             lasers_cutoff: LASER_CUTOFF,
         };
 
-        let mut encoder_lock = rwp.encoder.lock();
-
-        encoder_lock.draw(
-            &self.slice,
-            &self.pipeline,
-            &data,
-        );
+        rwp.tex_ctx.encoder.draw(&self.slice, &self.pipeline, &data);
     }
 }
 
 impl RenderDetails for LGRenderDetails {
     fn render<'a>(
-        self,
-        rwp: RenderWindowParts<'a>,
+        mut self,
+        mut rwp: RenderWindowParts<'a>,
     )
     {
         // create a texture which will be utilized as a render target to render
@@ -223,56 +206,37 @@ impl RenderDetails for LGRenderDetails {
             None => return,
         };
 
-        {
-            // create a render target handle
-            let render_target = rwp
-                .factory
-                .view_texture_as_render_target(
-                    &lane_texture,
-                    lane_texture.levels,
-                    None,
-                )
-                .unwrap();
+        // bottom to top, this is the ordering of render:
+        // Lanes -> FX Hold -> BT Hold -> FX Chip -> BT Chip -> Laser
 
-            // create another one for the lasers
-            let laser_render_target = rwp
-                .factory
-                .view_texture_as_render_target(
-                    &laser_texture,
-                    laser_texture.levels,
-                    None,
-                )
-                .unwrap();
+        // render the lanes
+        block_fn(|| (&mut self.lanes).wait());
+        // .render(factory, g2d, &render_targetlane_texture.view,
+        // output_stencil);
 
-            // bottom to top, this is the ordering of render:
-            // Lanes -> FX Hold -> BT Hold -> FX Chip -> BT Chip -> Laser
+        // render the fx holds
+        block_fn(|| (&mut self.fx_holds).wait());
+        // .render(factory, g2d, &render_targetlane_texture.view,
+        // output_stencil);
 
-            // render the lanes
-            block_fn(|| self.lanes.wait());
-            // .render(factory, g2d, &render_target, output_stencil);
+        // render the bt holds
+        block_fn(|| (&mut self.bt_holds).wait());
+        // .render(factory, g2d, &render_targetlane_texture.view,
+        // output_stencil);
 
-            // render the fx holds
-            block_fn(|| self.fx_holds.wait());
-            // .render(factory, g2d, &render_target, output_stencil);
+        // render the fx chips
+        block_fn(|| (&mut self.fx_chips).wait());
+        // .render(factory, g2d, &render_targetlane_texture.view,
+        // output_stencil);
 
-            // render the bt holds
-            block_fn(|| self.bt_holds.wait());
-            // .render(factory, g2d, &render_target, output_stencil);
+        // render the bt chips
+        block_fn(|| (&mut self.bt_chips).wait());
+        // .render(factory, g2d, &render_targetlane_texture.view,
+        // output_stencil);
 
-            // render the fx chips
-            block_fn(|| self.fx_chips.wait());
-            // .render(factory, g2d, &render_target, output_stencil);
-
-            // render the bt chips
-            block_fn(|| self.bt_chips.wait());
-            // .render(factory, g2d, &render_target, output_stencil);
-
-            // render the lasers
-            block_fn(|| self.lasers.wait());
-            // .render(factory, g2d, &laser_render_target, output_stencil);
-
-            // both render targets is dropped here
-        }
+        // render the lasers
+        block_fn(|| (&mut self.lasers).wait());
+        // .render(factory, g2d, &laser_texture.view, output_stencil);
 
         // then finally utilize the render target as a texture of a rectangle,
         // which would then be rendered on the screen
@@ -296,7 +260,8 @@ impl CanBeWindowHandled for LGInitRequest {
     fn handle<'a>(
         self,
         uwp: &mut UpdateWindowParts<'a>,
-    ) -> Self::Response {
+    ) -> Self::Response
+    {
         use crate::pipelines::lane_governor::*;
 
         let (vbuf, slice) = {
@@ -607,8 +572,8 @@ impl RenderableActorWrapper for LaneGovernor {
         _: &ContextWrapper<Self>,
     ) -> Self::Details
     {
-        let song_time = payload.song_time.clone.unwrap_or(SongTime(0));
-        let transform = Arc::new(self.calculate_matrix(song_time));
+        let song_time = payload.time.song_time.clone().unwrap_or(SongTime(0));
+        let transform = Arc::new(self.calculate_matrix(&song_time));
 
         let (details, lanes, chip_bt, hold_bt, chip_fx, hold_fx, lasers) =
             LGRenderDetails::new(
@@ -756,8 +721,6 @@ impl Spin {
 }
 
 fn get_default_first_person() -> FirstPerson {
-    use camera_controllers::FirstPersonSettings;
-
     FirstPerson::new(
         [0., 0., 0.],
         camera_controllers::FirstPersonSettings::keyboard_wasd(),
@@ -765,8 +728,6 @@ fn get_default_first_person() -> FirstPerson {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-
-use std::sync::atomic::Ordering;
 
 pub struct SongTimer {
     counter: AtomicI64,
@@ -790,9 +751,9 @@ impl SongTimer {
         }
     }
 
-    pub fn get_freq(&self) -> Option<u64> {
+    pub fn get_freq(&self) -> Option<u32> {
         if self.is_some.load(Ordering::Relaxed) {
-            Some(self.counter.load(Ordering::Relaxed))
+            Some(self.freq.load(Ordering::Relaxed))
         }
         else {
             None
