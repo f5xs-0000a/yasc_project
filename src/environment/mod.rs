@@ -47,6 +47,7 @@ use gfx_graphics::{
     TextureContext,
 };
 use glutin_window::GlutinWindow;
+use piston::event_loop::EventLoop as _;
 use piston_window::{
     Events,
     Input,
@@ -103,7 +104,7 @@ impl GamePrelude {
 
         let output_color = pistonwindow.output_color;
         let output_stencil = pistonwindow.output_stencil;
-        let events = pistonwindow.events;
+        let events = pistonwindow.events.ups(180).max_fps(120).lazy(false);
         let window = pistonwindow.window;
         let g2d = pistonwindow.g2d;
         let shdr_ver = GLSL::V3_30;
@@ -141,20 +142,23 @@ impl GamePrelude {
         };
 
         while let Some(e) = self.events.next(&mut self.window) {
-            match e {
-                // we already handled this
+            match dbg!(e) {
                 E::Loop(Loop::Render(_)) => {
+                    dbg!(());
                     self.render_procedure();
-                    // normally, this should be unreachable!(),
                 },
 
                 // handle the inputs of the game
                 // TODO: what does the Option<u32> pertain to? (second element)
-                E::Input(i, _) => self.update_procedure(Some(i)),
+                E::Input(i, _) => {
+                    dbg!(());
+                    self.update_procedure(Some(i));
+                },
 
                 // handle update requests by handling the initialization
                 // requests
                 E::Loop(Loop::Update(_)) => {
+                    dbg!(());
                     self.update_procedure(None);
                 },
 
@@ -193,6 +197,8 @@ impl GamePrelude {
             // likewise, map the error too
             .map_err(|cancel| B(cancel));
 
+        dbg!(());
+
         // temporarily take iu_rx from its container so we can build
         // UpdateWindowParts
         let mut iu_rx = self.iu_rx.take().unwrap();
@@ -209,18 +215,24 @@ impl GamePrelude {
                 .select(response_fut.into_stream())
                 .wait();
 
-            waitable.for_each(|select| {
+            for select in waitable {
                 match select {
                     Ok(A(env)) => {
+                        dbg!(());
                         env.handle(&mut uwp);
                     },
 
-                    Ok(B(_)) => return,
+                    Ok(B(_)) => {
+                        dbg!(());
+                        break;
+                    },
 
                     Err(_) => unreachable!(),
                 }
-            });
+            }
         }
+
+        dbg!(());
 
         // and we put the iu_rx back, now that we're done using the
         // UpdateWindowParts

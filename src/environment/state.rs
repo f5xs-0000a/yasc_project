@@ -128,7 +128,7 @@ impl RenderDetails for GameStateRenderDetails {
         use self::GameStateRenderDetails::*;
 
         match self {
-            Song(mut response) => {
+            Song(response) => {
                 match response.wait() {
                     Ok(r) => r.render(rwp),
                     _ => {}, /* response is cancelled, so we just don't

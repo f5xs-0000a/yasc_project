@@ -153,7 +153,7 @@ pub struct LanesRenderDetails {
 
 impl RenderDetails for LanesRenderDetails {
     fn render<'a>(
-        mut self,
+        self,
         rwp: &mut RenderWindowParts<'a>,
     )
     {

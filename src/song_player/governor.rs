@@ -372,8 +372,7 @@ impl LaneGovernor {
         time: &SongTime,
     ) -> Rad<f32>
     {
-        self.get_current_rotation(time)
-            + self.get_rotation_after_adjustment(time)
+        self.get_current_rotation(time) + self.get_rotation_adjustment(time)
     }
 
     pub fn get_current_rotation(
