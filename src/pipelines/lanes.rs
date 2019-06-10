@@ -21,11 +21,9 @@ gfx_vertex_struct!(Corner {
 ////////////////////////////////////////////////////////////////////////////////
 
 impl Corner {
-    fn new(
-        vertex_pos: [f32; 2],
-        tex_coord: f32,
-    ) -> Corner
-    {
+    pub fn new(vertex_pos: [f32; 2]) -> Corner {
+        let tex_coord = vertex_pos.clone();
+
         Corner {
             vertex_pos,
             tex_coord,

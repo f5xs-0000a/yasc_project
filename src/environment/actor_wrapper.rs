@@ -4,6 +4,17 @@ use crate::environment::{
     RenderWindowParts,
 };
 use futures::sync::mpsc::UnboundedSender;
+use gfx::{
+    format::{
+        DepthStencil,
+        Srgba8,
+    },
+    handle::{
+        DepthStencilView,
+        RenderTargetView,
+    },
+};
+use gfx_device_gl::Resources;
 use piston_window::Input;
 use sekibanki::{
     Actor,
@@ -13,6 +24,7 @@ use sekibanki::{
     Handles,
     Sender as TPSender,
 };
+use shader_version::glsl::GLSL;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -182,7 +194,73 @@ pub type ContextWrapper<T: 'static + ActorWrapper> =
 pub struct RenderPayload<P>
 where P: Send + Sync {
     pub payload: P,
-    pub time:    GameTime,
+    time: GameTime,
+    pub color_target: RenderTargetView<Resources, Srgba8>,
+    pub depth_stencil: DepthStencilView<Resources, DepthStencil>,
+    pub shdr_ver: GLSL,
+}
+
+impl<P> RenderPayload<P>
+where P: Send + Sync
+{
+    pub fn new(
+        payload: P,
+        time: GameTime,
+        color_target: RenderTargetView<Resources, Srgba8>,
+        depth_stencil: DepthStencilView<Resources, DepthStencil>,
+        shdr_ver: GLSL,
+    ) -> RenderPayload<P>
+    {
+        RenderPayload {
+            payload,
+            time,
+            color_target,
+            depth_stencil,
+            shdr_ver,
+        }
+    }
+
+    pub fn get_time(&self) -> &GameTime {
+        &self.time
+    }
+
+    pub fn set_color_target(
+        self,
+        color_target: RenderTargetView<Resources, Srgba8>,
+    ) -> RenderPayload<P>
+    {
+        RenderPayload {
+            color_target,
+            ..self
+        }
+    }
+
+    pub fn set_depth_stencil(
+        self,
+        depth_stencil: DepthStencilView<Resources, DepthStencil>,
+    ) -> RenderPayload<P>
+    {
+        RenderPayload {
+            depth_stencil,
+            ..self
+        }
+    }
+
+    pub fn set_payload<P2>(
+        self,
+        payload: P2,
+    ) -> RenderPayload<P2>
+    where
+        P2: Send + Sync,
+    {
+        RenderPayload {
+            payload,
+            time: self.time,
+            color_target: self.color_target,
+            depth_stencil: self.depth_stencil,
+            shdr_ver: self.shdr_ver,
+        }
+    }
 }
 
 impl<A> HandlesWrapper<RenderPayload<<A as RenderableActorWrapper>::Payload>>
@@ -206,6 +284,14 @@ where A: RenderableActorWrapper
 pub trait RenderDetails: Send + Sync {
     fn render<'a>(
         self,
-        rwp: RenderWindowParts<'a>,
+        mh: &mut RenderWindowParts<'a>,
     );
 }
+
+////////////////////////////////////////////////////////////////////////////////
+
+pub type RenderResponseFuture<A: RenderableActorWrapper> =
+    sekibanki::response::ResponseFuture<
+        WrappedActor<A>,
+        RenderPayload<<A as RenderableActorWrapper>::Payload>,
+    >;

@@ -5,6 +5,7 @@ use crate::{
             ContextWrapper,
             RenderDetails,
             RenderPayload,
+            RenderResponseFuture,
             RenderableActorWrapper,
             UpdatePayload,
             WrappedAddr,
@@ -18,6 +19,7 @@ use crate::{
     song_player::governor::LaneGovernor,
 };
 use bidir_map::BidirMap;
+use futures::future::Future as _;
 use piston_window::{
     Button,
     Input,
@@ -88,21 +90,55 @@ impl RenderableActorWrapper for GameState {
         _: &ContextWrapper<Self>,
     ) -> Self::Details
     {
-        GameStateRenderDetails {}
+        use self::{
+            GameStateRenderDetails as GSRD,
+            StateEnum as SE,
+        };
+
+        match &mut self.state {
+            SE::Uninitialized => GSRD::Uninitialized,
+            SE::TitleScreen => GSRD::TitleScreen,
+            SE::Settings => GSRD::Settings,
+            SE::SongSelection => GSRD::SongSelection,
+            SE::Song(ref mut addr) => GSRD::Song(addr.send(payload)),
+        }
     }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-pub struct GameStateRenderDetails {}
+pub enum GameStateRenderDetails {
+    Uninitialized,
+
+    TitleScreen,
+
+    Settings,
+
+    SongSelection,
+
+    Song(RenderResponseFuture<LaneGovernor>),
+}
 
 impl RenderDetails for GameStateRenderDetails {
     fn render<'a>(
         self,
-        _rwp: RenderWindowParts<'a>,
+        rwp: &mut RenderWindowParts<'a>,
     )
     {
-        // do nothing for now
+        use self::GameStateRenderDetails::*;
+
+        match self {
+            Song(mut response) => {
+                match response.wait() {
+                    Ok(r) => r.render(rwp),
+                    _ => {}, /* response is cancelled, so we just don't
+                              * render
+                              * TODO: we might want to match that and log the
+                              * result */
+                }
+            },
+            _ => {}, // unimplemented
+        }
     }
 }
 
@@ -112,5 +148,6 @@ pub enum StateEnum {
     Uninitialized,
     TitleScreen,
     Settings,
+    SongSelection,
     Song(WrappedAddr<LaneGovernor>),
 }

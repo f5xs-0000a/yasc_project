@@ -12,10 +12,7 @@ use crate::{
         RenderWindowParts,
         UpdateWindowParts,
     },
-    pipelines::lane_governor::{
-        Corner,
-        LaneGovernorRenderPipeline,
-    },
+    pipelines::lane_governor::*,
     song_player::{
         keyframe::{
             Keyframe,
@@ -23,9 +20,7 @@ use crate::{
         },
         song_timer::SongTime,
     },
-    utils::{
-        block_fn,
-    },
+    utils::block_fn,
 };
 use camera_controllers::FirstPerson;
 use cgmath::{
@@ -45,7 +40,11 @@ use futures::{
     },
 };
 use gfx::{
-    handle::Buffer,
+    format::Srgba8,
+    handle::{
+        Buffer,
+        RenderTargetView,
+    },
     pso::PipelineState,
     traits::FactoryExt as _,
     Slice,
@@ -86,17 +85,20 @@ pub struct LGRenderDetails {
     pipeline: PipelineState<Resources, LaneGovernorRenderPipeline::Meta>,
     vbuf:     Buffer<Resources, Corner>,
     slice:    Slice<Resources>,
+
+    color_target: RenderTargetView<Resources, Srgba8>,
 }
 
 impl LGRenderDetails {
     pub fn new(
+        payload: RenderPayload<()>,
         transform: Arc<Matrix4<f32>>,
         pipeline: PipelineState<Resources, LaneGovernorRenderPipeline::Meta>,
         vbuf: Buffer<Resources, Corner>,
         slice: Slice<Resources>,
     ) -> (
         LGRenderDetails,
-        OneshotSender<()>, //OneshotSender<LanesRenderRequest>, // lanes
+        OneshotSender<()>, // OneshotSender<LanesRenderRequest>, // lanes
         OneshotSender<()>, // chip bts
         OneshotSender<()>, // hold bts
         OneshotSender<()>, // chip fxs
@@ -124,6 +126,7 @@ impl LGRenderDetails {
             pipeline,
             vbuf,
             slice,
+            color_target: payload.color_target.clone(),
         };
 
         (
@@ -158,7 +161,7 @@ impl LGRenderDetails {
 
     fn render_lanes<'a>(
         self,
-        rwp: RenderWindowParts<'a>,
+        rwp: &mut RenderWindowParts<'a>,
         lanes_texture: Texture<Resources>,
         lasers_texture: Texture<Resources>,
     )
@@ -173,7 +176,7 @@ impl LGRenderDetails {
         // declare the data for the pipeline
         let data = LaneGovernorRenderPipeline::Data {
             vbuf: self.vbuf,
-            out_color: rwp.output_color.clone(),
+            out_color: self.color_target,
             transform: (*self.transform).clone().into(),
             lanes_texture: (lanes_texture.view, lanes_texture.sampler),
             lasers_texture: (lasers_texture.view, lasers_texture.sampler),
@@ -187,7 +190,7 @@ impl LGRenderDetails {
 impl RenderDetails for LGRenderDetails {
     fn render<'a>(
         mut self,
-        mut rwp: RenderWindowParts<'a>,
+        rwp: &mut RenderWindowParts<'a>,
     )
     {
         // create a texture which will be utilized as a render target to render
@@ -195,13 +198,13 @@ impl RenderDetails for LGRenderDetails {
         // NOTE: if a None is returned instead of a Some, it's a rare case of
         // this function being called while the window has already been closed.
         // Just simply do not continue any further if it is encountered.
-        let lane_texture = match self.create_render_target_texture(&mut rwp) {
+        let lane_texture = match self.create_render_target_texture(rwp) {
             Some(lt) => lt,
             None => return,
         };
 
         // and another one for the lasers
-        let laser_texture = match self.create_render_target_texture(&mut rwp) {
+        let laser_texture = match self.create_render_target_texture(rwp) {
             Some(lt) => lt,
             None => return,
         };
@@ -262,8 +265,6 @@ impl CanBeWindowHandled for LGInitRequest {
         uwp: &mut UpdateWindowParts<'a>,
     ) -> Self::Response
     {
-        use crate::pipelines::lane_governor::*;
-
         let (vbuf, slice) = {
             // declare the vertices of the square of the lanes
             let vertices = vec![[-1., -1.], [1., -1.], [1., 1.], [-1., 1.]]
@@ -276,11 +277,14 @@ impl CanBeWindowHandled for LGInitRequest {
             let vert_order: &[u16] = &[0, 1, 2, 2, 3, 0];
 
             // create the vertex buffer
-            uwp.factory.create_vertex_buffer_with_slice(&vertices, vert_order)
+            uwp.tex_ctx
+                .factory
+                .create_vertex_buffer_with_slice(&vertices, vert_order)
         };
 
         // create the pipeline
         let pipeline = uwp
+            .tex_ctx
             .factory
             .create_pipeline_simple(
                 Shaders::new()
@@ -572,18 +576,18 @@ impl RenderableActorWrapper for LaneGovernor {
         _: &ContextWrapper<Self>,
     ) -> Self::Details
     {
-        let song_time = payload.time.song_time.clone().unwrap_or(SongTime(0));
+        let song_time =
+            payload.get_time().song_time.clone().unwrap_or(SongTime(0));
         let transform = Arc::new(self.calculate_matrix(&song_time));
 
         let (details, lanes, chip_bt, hold_bt, chip_fx, hold_fx, lasers) =
             LGRenderDetails::new(
+                payload.clone(),
                 transform.clone(),
                 self.pipeline.clone(),
                 self.vbuf.clone(),
                 self.slice.clone(),
             );
-
-        // TODO: do something about the senders. actually send them data.
 
         details
     }

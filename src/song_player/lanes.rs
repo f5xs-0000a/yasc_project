@@ -1,3 +1,43 @@
+use crate::{
+    environment::{
+        actor_wrapper::{
+            ActorWrapper,
+            ContextWrapper,
+            RenderDetails,
+            RenderPayload,
+            RenderableActorWrapper,
+            UpdatePayload,
+        },
+        update_routine::CanBeWindowHandled,
+        RenderWindowParts,
+        UpdateWindowParts,
+    },
+    pipelines::lanes::*,
+};
+use gfx::{
+    format::Srgba8,
+    handle::{
+        Buffer,
+        RenderTargetView,
+    },
+    pso::PipelineState,
+    traits::FactoryExt as _,
+    Slice,
+};
+use gfx_device_gl::Resources;
+use gfx_graphics::{
+    Texture,
+    TextureSettings,
+};
+use image::{
+    DynamicImage,
+    ImageResult,
+};
+use shader_version::{
+    glsl::GLSL,
+    Shaders,
+};
+
 ////////////////////////////////////////////////////////////////////////////////
 
 pub struct LanesInitRequest {
@@ -5,108 +45,125 @@ pub struct LanesInitRequest {
 }
 
 impl LanesInitRequest {
-    pub fn new<S>(img_buf: &[u8]) -> ImageResult<LanesInitRequest> {
-        image::load_from_memory(img_buf)
-            .map(|lane_image| LanesInitRequest { lane_image })
+    pub fn new(img_buf: &[u8]) -> ImageResult<LanesInitRequest> {
+        image::load_from_memory(img_buf).map(|lane_image| {
+            LanesInitRequest {
+                lane_image,
+            }
+        })
     }
-    
-    pub fn create_texture_buffer(self, factory: &mut Factory) -> Texture {
+
+    pub fn debug_new() -> LanesInitRequest {
+        LanesInitRequest::new(unimplemented!()).unwrap()
+    }
+
+    fn create_texture_buffer<'a>(
+        self,
+        uwp: &mut UpdateWindowParts<'a>,
+    ) -> Texture<Resources>
+    {
         Texture::from_image(
-            factory,
-            self.lane_image.to_rgba(),
-            Texture_Settings::new(),
+            &mut uwp.tex_ctx,
+            &self.lane_image.to_rgba(),
+            &TextureSettings::new(),
         )
+        .unwrap()
     }
 }
 
-fn fulfill_lanes_init_request(
-    req: Box<LanesInitRequest>,
-    factory: &mut Factory,
-) -> Box<LaneGovernor> {
-    // create the pipeline
-    let pipeline = factory.create_pipeline_simple(
-        Shaders::new()
-            .set(GLSL::V3_30, include_str!("shaders/lanes.vert.glsl"))
-            .get(glsl).unwrap().as_bytes(),
-        Shaders::enw()
-            .set(GLSL::V3_30, include_str!("shaders/lanes.frag.glsl"))
-            .get(glsl).unwrap().as_bytes(),
-        LaneRenderPipeline::new(),
-    );
+impl CanBeWindowHandled for LanesInitRequest {
+    type Response = Lanes;
 
-    // declare the vertices of the square of the lanes
-    let vertices = [
-        ([-1., -1.], 0.), // bottom left
-        ([1., -1.], 1.),  // bottom rgiht
-        ([1., 1.], 1.),   // top right
-        ([-1., 1.], 0.),  // top left
-    ]
-    .into_iter()
-    .map(|(p, t)| Vertex::new(*p, *t))
-    .collect::<Vec<_>>();
+    fn handle<'a>(
+        self,
+        uwp: &mut UpdateWindowParts<'a>,
+    ) -> Self::Response
+    {
+        use crate::pipelines::lanes::*;
 
-    // declare the ordering of indices how we're going to render the
-    // triangle
-    let vert_order: &[u16] = &[0, 1, 2, 2, 3, 0];
+        // create the pipeline
+        let pipeline = uwp
+            .tex_ctx
+            .factory
+            .create_pipeline_simple(
+                Shaders::new()
+                    .set(
+                        GLSL::V3_30,
+                        include_str!("../shaders/lanes.vert.glsl"),
+                    )
+                    .get(uwp.glsl)
+                    .unwrap()
+                    .as_bytes(),
+                Shaders::new()
+                    .set(
+                        GLSL::V3_30,
+                        include_str!("../shaders/lanes.frag.glsl"),
+                    )
+                    .get(uwp.glsl)
+                    .unwrap()
+                    .as_bytes(),
+                LaneRenderPipeline::new(),
+            )
+            .unwrap();
 
-    // create the vertex buffer
-    let (vertex_buffer, slice) =
-        factory.create_vertex_buffer_with_slice(&vertices, vert_order);
+        // declare the vertices of the square of the lanes
+        let vertices = [
+            [-1., -1.], // bottom left
+            [1., -1.],  // bottom rgiht
+            [1., 1.],   // top right
+            [-1., 1.],  // top left
+        ]
+        .into_iter()
+        .map(|p| Corner::new(*p))
+        .collect::<Vec<_>>();
 
-    // create the texture
-    let texture = self.create_texture_buffer(factory);
+        // declare the ordering of indices how we're going to render the
+        // triangle
+        let vert_order: &[u16] = &[0, 1, 2, 2, 3, 0];
 
-    Box::new(
+        // create the vertex buffer
+        let (vertex_buffer, slice) = uwp
+            .tex_ctx
+            .factory
+            .create_vertex_buffer_with_slice(&vertices, vert_order);
+
+        // create the texture
+        let texture = self.create_texture_buffer(uwp);
+
         Lanes {
             pipeline,
             vertex_buffer,
             slice,
             texture,
         }
-    )
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-#[derive(Debug, Eq, PartialEq, Clone)]
-pub struct LanesRenderRequest {
-    respond_channel: OneshotSender<LanesRenderDetails>,
-    texture: Texture<Resources, Srgba8>,
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct LanesRenderDetails {
-    pub vertex_buffer: Buffer<Resources, Vertex>,
-    pub slice: Slice<Resources>,
-    pub pipeline: PipelineState<Resources, LaneRenderPipeline::Meta>,
+    texture:      Texture<Resources>,
+    color_target: RenderTargetView<Resources, Srgba8>,
 
-    pub transform: Arc<Matrix4>,
+    vertex_buffer: Buffer<Resources, Corner>,
+    slice:         Slice<Resources>,
+    pipeline:      PipelineState<Resources, LaneRenderPipeline::Meta>,
 }
 
 impl RenderDetails for LanesRenderDetails {
-    fn render(
-        self,
-        factory: &mut Factory,
-        window: &mut GlutinWindow;
-        g2d: &mut Gfx2d<Resources>,
-        output_color: &RenderTargetView<Resources, Srgba8>,
-        output_stencil: &DepthStencilView<Resources, DepthStencil>,
-    ) {
-        // since we are rendering on a texture to be used by the governor (which
-        // will be the one utilizing the transformation matrices), we're not
-        // going to be using any transformation matrices
-    
-        // declare the data for the pipeline
-        let data = lane_pipe::Data {
+    fn render<'a>(
+        mut self,
+        rwp: &mut RenderWindowParts<'a>,
+    )
+    {
+        let data = LaneRenderPipeline::Data {
             vbuf:      self.vertex_buffer,
-            out_color: window.output_color.clone(),
-            transform: self.transform,
-            lanes_texture,
-            lasers_texture,
-            laser_cutoff: LASER_CUTOFF,
+            out_color: self.color_target,
+            texture:   (self.texture.view, self.texture.sampler),
         };
+
+        rwp.tex_ctx.encoder.draw(&self.slice, &self.pipeline, &data);
     }
 }
 
@@ -114,18 +171,43 @@ impl RenderDetails for LanesRenderDetails {
 
 #[derive(Debug)]
 pub struct Lanes {
-    vertex_buffer: Buffer<Resources, Vertex>,
-    slice: Slice<Resources>,
-    pipeline: PipelineState<Resources, LaneRenderPipeline::Meta>,
+    vertex_buffer: Buffer<Resources, Corner>,
+    slice:         Slice<Resources>,
+    pipeline:      PipelineState<Resources, LaneRenderPipeline::Meta>,
 
-    texture: Texture,
+    texture: Texture<Resources>,
 }
 
-impl Actor for Lanes {
+impl ActorWrapper for Lanes {
+    type Payload = ();
+
+    fn update(
+        &mut self,
+        payload: UpdatePayload<Self::Payload>,
+        ctx: &ContextWrapper<Self>,
+    )
+    {
+        // do nothing. this doesn't even need to update
+    }
 }
 
-impl Handle<
+impl RenderableActorWrapper for Lanes {
+    type Details = LanesRenderDetails;
+    type Payload = ();
 
-// the texture of the lanes should not be located here. it should be located in
-// either Pipelines or Assets as the texture of the lanes persists throughout
-// the whole game
+    fn emit_render_details(
+        &mut self,
+        payload: RenderPayload<()>,
+        _: &ContextWrapper<Self>,
+    ) -> Self::Details
+    {
+        LanesRenderDetails {
+            texture:      self.texture.clone(),
+            color_target: payload.color_target,
+
+            vertex_buffer: self.vertex_buffer.clone(),
+            slice:         self.slice.clone(),
+            pipeline:      self.pipeline.clone(),
+        }
+    }
+}

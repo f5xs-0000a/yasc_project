@@ -228,15 +228,18 @@ impl GamePrelude {
     }
 
     fn render_procedure(&mut self) {
-        let payload = RenderPayload {
-            payload: (),
-            time:    self.get_game_time(),
-        };
+        let payload = RenderPayload::new(
+            (),
+            self.get_game_time(),
+            self.output_color.clone(),
+            self.output_stencil.clone(),
+            self.shdr_ver.clone(),
+        );
 
         self.state
             .send(payload)
             .map(|response| {
-                response.render(RenderWindowParts::from_game_prelude(self))
+                response.render(&mut RenderWindowParts::from_game_prelude(self))
             })
             .wait();
     }
@@ -245,16 +248,13 @@ impl GamePrelude {
 ////////////////////////////////////////////////////////////////////////////////
 
 pub struct RenderWindowParts<'a> {
-    pub window: &'a mut GlutinWindow,
-    pub g2d: &'a mut Gfx2d<Resources>,
-    pub output_color: &'a RenderTargetView<Resources, Srgba8>,
-    pub output_stencil: &'a DepthStencilView<Resources, DepthStencil>,
-    pub shdr_ver: GLSL,
     pub tex_ctx: &'a mut TextureContext<Factory, Resources, CommandBuffer>,
+    pub window:  &'a mut GlutinWindow,
+    pub g2d:     &'a mut Gfx2d<Resources>,
 }
 
 pub struct UpdateWindowParts<'a> {
-    pub factory: &'a mut Factory,
+    pub tex_ctx: &'a mut TextureContext<Factory, Resources, CommandBuffer>,
     pub window:  &'a mut GlutinWindow,
     pub glsl:    GLSL,
 }
@@ -262,11 +262,8 @@ pub struct UpdateWindowParts<'a> {
 impl<'a> RenderWindowParts<'a> {
     fn from_game_prelude(gp: &'a mut GamePrelude) -> RenderWindowParts<'a> {
         RenderWindowParts {
-            window: &mut gp.window,
-            g2d: &mut gp.g2d,
-            output_color: &mut gp.output_color,
-            output_stencil: &mut gp.output_stencil,
-            shdr_ver: gp.shdr_ver.clone(),
+            window:  &mut gp.window,
+            g2d:     &mut gp.g2d,
             tex_ctx: &mut gp.tex_ctx,
         }
     }
@@ -275,7 +272,7 @@ impl<'a> RenderWindowParts<'a> {
 impl<'a> UpdateWindowParts<'a> {
     fn from_game_prelude(gp: &'a mut GamePrelude) -> UpdateWindowParts<'a> {
         UpdateWindowParts {
-            factory: &mut gp.tex_ctx.factory,
+            tex_ctx: &mut gp.tex_ctx,
             window:  &mut gp.window,
             glsl:    gp.shdr_ver.clone(),
         }
