@@ -9,8 +9,11 @@ use futures::sync::{
         channel as oneshot,
         Receiver as OneshotReceiver,
         Sender as OneshotSender,
+        Canceled,
     },
 };
+use futures::future::Future as _;
+use crate::utils::block_fn;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -96,6 +99,12 @@ pub trait CanBeWindowHandled: 'static + Sized + Send {
 
     fn wrap(self) -> (UpdateEnvelope, OneshotReceiver<Self::Response>) {
         UpdateEnvelope::new(self)
+    }
+
+    fn send_then_receive(self, tx: &mut UnboundedSender<UpdateEnvelope>) -> Result<Self::Response, Canceled> {
+        let (env, rx) = self.wrap();
+        tx.unbounded_send(env);
+        block_fn(|| rx.wait())
     }
 }
 

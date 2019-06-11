@@ -142,23 +142,20 @@ impl GamePrelude {
         };
 
         while let Some(e) = self.events.next(&mut self.window) {
-            match dbg!(e) {
+            match e {
                 E::Loop(Loop::Render(_)) => {
-                    dbg!(());
                     self.render_procedure();
                 },
 
                 // handle the inputs of the game
                 // TODO: what does the Option<u32> pertain to? (second element)
                 E::Input(i, _) => {
-                    dbg!(());
                     self.update_procedure(Some(i));
                 },
 
                 // handle update requests by handling the initialization
                 // requests
                 E::Loop(Loop::Update(_)) => {
-                    dbg!(());
                     self.update_procedure(None);
                 },
 
@@ -197,8 +194,6 @@ impl GamePrelude {
             // likewise, map the error too
             .map_err(|cancel| B(cancel));
 
-        dbg!(());
-
         // temporarily take iu_rx from its container so we can build
         // UpdateWindowParts
         let mut iu_rx = self.iu_rx.take().unwrap();
@@ -218,12 +213,10 @@ impl GamePrelude {
             for select in waitable {
                 match select {
                     Ok(A(env)) => {
-                        dbg!(());
                         env.handle(&mut uwp);
                     },
 
                     Ok(B(_)) => {
-                        dbg!(());
                         break;
                     },
 
@@ -231,8 +224,6 @@ impl GamePrelude {
                 }
             }
         }
-
-        dbg!(());
 
         // and we put the iu_rx back, now that we're done using the
         // UpdateWindowParts

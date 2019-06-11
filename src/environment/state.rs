@@ -15,8 +15,9 @@ use crate::{
             ComposedKeystroke,
         },
         RenderWindowParts,
+        update_routine::CanBeWindowHandled as _,
     },
-    song_player::governor::LaneGovernor,
+    song_player::governor::{LGInitRequest, LaneGovernor},
 };
 use bidir_map::BidirMap;
 use futures::future::Future as _;
@@ -50,24 +51,22 @@ impl ActorWrapper for GameState {
 
     fn update(
         &mut self,
-        payload: UpdatePayload<Self::Payload>,
-        _: &ContextWrapper<Self>,
+        mut payload: UpdatePayload<Self::Payload>,
+        ctx: &ContextWrapper<Self>,
     )
     {
         use self::StateEnum::*;
         use piston_window::ButtonState;
 
         // update the buttons_pressed
-        let mut new_press = None;
         if let &Some(Input::Button(b)) = &payload.event {
-            new_press = Some(b.button.clone());
-
             if b.state == ButtonState::Press {
                 self.buttons_pressed.push((
                     b.button.clone(),
                     payload.game_time.instant.clone(),
                 ));
             }
+
             else {
                 self.buttons_pressed.retain(|x| x.0 != b.button);
             }
@@ -75,6 +74,18 @@ impl ActorWrapper for GameState {
 
         match &mut self.state {
             Song(lg_addr) => {}, // unimplemented
+
+            Uninitialized => {
+                // if not initialized yet, initialize to the song state
+                // TODO: we don't initialize to the song state too fast.
+                let lg_addr = LGInitRequest::debug_new()
+                    .send_then_receive(&mut payload.tx)
+                    .unwrap()
+                    .start_actor(Default::default(), ctx.threadpool().clone());
+
+                self.state = Song(lg_addr);
+            },
+
             _ => {},
         }
     }

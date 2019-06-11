@@ -75,7 +75,7 @@ use std::sync::{
 pub struct LGRenderDetails {
     transform: Arc<Matrix4<f32>>,
 
-    lanes:    OneshotReceiver<()>, // OneshotReceiver<LanesRenderDetails>,
+    lanes:    OneshotReceiver<LanesRenderDetails>,
     bt_chips: OneshotReceiver<()>,
     bt_holds: OneshotReceiver<()>,
     fx_chips: OneshotReceiver<()>,
@@ -98,7 +98,7 @@ impl LGRenderDetails {
         slice: Slice<Resources>,
     ) -> (
         LGRenderDetails,
-        OneshotSender<()>, // OneshotSender<LanesRenderRequest>, // lanes
+        OneshotSender<LanesRenderRequest>, // lanes
         OneshotSender<()>, // chip bts
         OneshotSender<()>, // hold bts
         OneshotSender<()>, // chip fxs
@@ -214,8 +214,7 @@ impl RenderDetails for LGRenderDetails {
 
         // render the lanes
         block_fn(|| (&mut self.lanes).wait());
-        // .render(factory, g2d, &render_targetlane_texture.view,
-        // output_stencil);
+        .render(factory, g2d, &render_targetlane_texture.view, output_stencil);
 
         // render the fx holds
         block_fn(|| (&mut self.fx_holds).wait());
@@ -255,6 +254,36 @@ pub struct LGInitRequest {
     rotation_events: Vec<(SongTime, Keyframe<TransformationKFCurve>)>,
     slant_events:    Vec<(SongTime, Keyframe<TransformationKFCurve>)>,
     zoom_events:     Vec<(SongTime, Keyframe<TransformationKFCurve>)>,
+
+    lanes: WrappedAddr<Lanes>,
+}
+
+impl LGInitRequest {
+    pub fn debug_new() -> LGInitRequest {
+        LGInitRequest::with_rsz(vec![], vec![], vec![])
+    }
+
+    // the payload must be able to reach here
+    fn with_rsz(
+        rotation_events: Vec<(SongTime, Keyframe<TransformationKFCurve>)>,
+        slant_events:    Vec<(SongTime, Keyframe<TransformationKFCurve>)>,
+        zoom_events:     Vec<(SongTime, Keyframe<TransformationKFCurve>)>,
+    ) -> LGInitRequest {
+        // send all the initialization requests
+        let (env, rx) = self.wrap();
+        tx.unbounded_send(env);
+
+        // receive all the initialization requests
+        let lanes = block_fn(|| rx.wait());
+
+        LGInitRequest {
+            rotation_events,
+            slant_events,
+            zoom_events,
+
+            lanes,
+        }
+    }
 }
 
 impl CanBeWindowHandled for LGInitRequest {
@@ -316,6 +345,8 @@ impl CanBeWindowHandled for LGInitRequest {
             // current spin
             current_spin: None,
 
+            lanes: self.lanes,
+
             pipeline,
             vbuf,
             slice,
@@ -335,12 +366,12 @@ pub struct LaneGovernor {
 
     // current spin
     current_spin: Option<Spin>,
-    /* at this point, we have the drawable assets. they will be needing the
-     * matrix provided to them by the calculate_matrix()
-     *lanes: Lanes,
-     *notes: Bt,
-     *fx: Fx,
-     *lasers: Lasers, */
+    // at this point, we have the drawable assets. they will be needing the
+    // matrix provided to them by the calculate_matrix()
+    lanes: WrappedAddr<Lanes>,
+    // notes: Bt,
+    // fx: Fx,
+    // lasers: Lasers,
 
     pipeline: PipelineState<Resources, LaneGovernorRenderPipeline::Meta>,
     vbuf:     Buffer<Resources, Corner>,
@@ -579,6 +610,7 @@ impl RenderableActorWrapper for LaneGovernor {
             payload.get_time().song_time.clone().unwrap_or(SongTime(0));
         let transform = Arc::new(self.calculate_matrix(&song_time));
 
+        // declare the render details here
         let (details, lanes, chip_bt, hold_bt, chip_fx, hold_fx, lasers) =
             LGRenderDetails::new(
                 payload.clone(),
@@ -588,47 +620,18 @@ impl RenderableActorWrapper for LaneGovernor {
                 self.slice.clone(),
             );
 
-        details
-    }
-}
+        // then send the render request using all the tx above
+        let mut lanes_payload = payload.clone();
 
-/*
-impl Actor for LaneGovernor {
-}
-
-impl Handles<LGRenderRequest> for LaneGovernor {
-    type Response = LGRenderDetails;
-
-    fn handle(
-        &mut self,
-        _: LGRenderDetails,
-        _: &ContextImmutHalf<Self>
-    ) -> Self::Response {
-        // TODO: this None will be used in place of the actual song time for now
-        let song_time = (None).unwrap_or(SongTime(0));
-        let transform = Arc::new(self.calculate_matrix(&song_time));
-
-        let (
-            details,
-            lanes_sender,
-            bt_chips_sender,
-            bt_holds_sender,
-            fx_chips_sender,
-            fx_holds_sender,
-            lasers_sender,
-        ) = LGRenderDetails::new(
-            transform.clone(),
-            self.pipeline.clone(),
-            self.vbuf.clone(),
-            self.slice.clone(),
-        );
-
-        lanes_sender.send(LanesRenderRequest);
+        // we need to somehow declare the textures in here so we get to send
+        // the view as a payload to the lanes
+        unimplemented!();
+        
+        lanes.send();
 
         details
     }
 }
-*/
 
 fn mvp(
     m: &Matrix4<f32>,

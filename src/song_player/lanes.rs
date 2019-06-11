@@ -183,8 +183,8 @@ impl ActorWrapper for Lanes {
 
     fn update(
         &mut self,
-        payload: UpdatePayload<Self::Payload>,
-        ctx: &ContextWrapper<Self>,
+        _payload: UpdatePayload<Self::Payload>,
+        _ctx: &ContextWrapper<Self>,
     )
     {
         // do nothing. this doesn't even need to update
