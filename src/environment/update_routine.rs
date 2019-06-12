@@ -1,19 +1,23 @@
-use crate::environment::UpdateWindowParts;
-use futures::sync::{
-    mpsc::{
-        unbounded,
-        UnboundedReceiver,
-        UnboundedSender,
-    },
-    oneshot::{
-        channel as oneshot,
-        Receiver as OneshotReceiver,
-        Sender as OneshotSender,
-        Canceled,
+use crate::{
+    environment::UpdateWindowParts,
+    utils::block_fn,
+};
+use futures::{
+    future::Future as _,
+    sync::{
+        mpsc::{
+            unbounded,
+            UnboundedReceiver,
+            UnboundedSender,
+        },
+        oneshot::{
+            channel as oneshot,
+            Canceled,
+            Receiver as OneshotReceiver,
+            Sender as OneshotSender,
+        },
     },
 };
-use futures::future::Future as _;
-use crate::utils::block_fn;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -101,7 +105,11 @@ pub trait CanBeWindowHandled: 'static + Sized + Send {
         UpdateEnvelope::new(self)
     }
 
-    fn send_then_receive(self, tx: &mut UnboundedSender<UpdateEnvelope>) -> Result<Self::Response, Canceled> {
+    fn send_then_receive(
+        self,
+        tx: &mut UnboundedSender<UpdateEnvelope>,
+    ) -> Result<Self::Response, Canceled>
+    {
         let (env, rx) = self.wrap();
         tx.unbounded_send(env);
         block_fn(|| rx.wait())

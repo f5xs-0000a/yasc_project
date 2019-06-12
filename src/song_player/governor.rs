@@ -5,10 +5,15 @@ use crate::{
             ContextWrapper,
             RenderDetails,
             RenderPayload,
+            RenderResponseFuture,
             RenderableActorWrapper,
             UpdatePayload,
+            WrappedAddr,
         },
-        update_routine::CanBeWindowHandled,
+        update_routine::{
+            CanBeWindowHandled,
+            UpdateEnvelope,
+        },
         RenderWindowParts,
         UpdateWindowParts,
     },
@@ -17,6 +22,10 @@ use crate::{
         keyframe::{
             Keyframe,
             TransformationKFCurve,
+        },
+        lanes::{
+            Lanes,
+            LanesInitRequest,
         },
         song_timer::SongTime,
     },
@@ -34,9 +43,12 @@ use cgmath::{
 };
 use futures::{
     future::Future as _,
-    sync::oneshot::{
-        Receiver as OneshotReceiver,
-        Sender as OneshotSender,
+    sync::{
+        mpsc::UnboundedSender,
+        oneshot::{
+            Receiver as OneshotReceiver,
+            Sender as OneshotSender,
+        },
     },
 };
 use gfx::{
@@ -55,6 +67,7 @@ use gfx_graphics::{
     TextureSettings,
 };
 use image::ImageBuffer;
+use sekibanki::Sender as TPSender;
 use shader_version::{
     glsl::GLSL,
     Shaders,
@@ -73,103 +86,34 @@ use std::sync::{
 
 #[derive(Debug)]
 pub struct LGRenderDetails {
-    transform: Arc<Matrix4<f32>>,
+    pub transform: Arc<Matrix4<f32>>,
 
-    lanes:    OneshotReceiver<LanesRenderDetails>,
-    bt_chips: OneshotReceiver<()>,
-    bt_holds: OneshotReceiver<()>,
-    fx_chips: OneshotReceiver<()>,
-    fx_holds: OneshotReceiver<()>,
-    lasers:   OneshotReceiver<()>,
+    pub lanes: RenderResponseFuture<Lanes>,
 
-    pipeline: PipelineState<Resources, LaneGovernorRenderPipeline::Meta>,
-    vbuf:     Buffer<Resources, Corner>,
-    slice:    Slice<Resources>,
+    pub pipeline: PipelineState<Resources, LaneGovernorRenderPipeline::Meta>,
+    pub vbuf:     Buffer<Resources, Corner>,
+    pub slice:    Slice<Resources>,
 
-    color_target: RenderTargetView<Resources, Srgba8>,
+    // these textures will have color target handles borrowed and sent to the
+    // children actors so they could write on them. it is important to wait for
+    // them to finish before using these
+    pub lanes_texture: Texture<Resources>,
+    pub laser_texture: Texture<Resources>,
+
+    // this will be the color target that will be drawn on and it will come
+    // from the payload
+    pub color_target: RenderTargetView<Resources, Srgba8>,
 }
 
 impl LGRenderDetails {
-    pub fn new(
-        payload: RenderPayload<()>,
-        transform: Arc<Matrix4<f32>>,
-        pipeline: PipelineState<Resources, LaneGovernorRenderPipeline::Meta>,
-        vbuf: Buffer<Resources, Corner>,
-        slice: Slice<Resources>,
-    ) -> (
-        LGRenderDetails,
-        OneshotSender<LanesRenderRequest>, // lanes
-        OneshotSender<()>, // chip bts
-        OneshotSender<()>, // hold bts
-        OneshotSender<()>, // chip fxs
-        OneshotSender<()>, // hold fxs
-        OneshotSender<()>, // lasers
-    )
-    {
-        use futures::sync::oneshot::channel;
-
-        let lanes = channel();
-        let bt_chips = channel();
-        let bt_holds = channel();
-        let fx_chips = channel();
-        let fx_holds = channel();
-        let lasers = channel();
-
-        let lgrr = LGRenderDetails {
-            transform,
-            lanes: lanes.1,
-            bt_chips: bt_chips.1,
-            bt_holds: bt_holds.1,
-            fx_chips: fx_chips.1,
-            fx_holds: fx_holds.1,
-            lasers: lasers.1,
-            pipeline,
-            vbuf,
-            slice,
-            color_target: payload.color_target.clone(),
-        };
-
-        (
-            lgrr, lanes.0, bt_chips.0, bt_holds.0, fx_chips.0, fx_holds.0,
-            lasers.0,
-        )
-    }
-
-    fn create_render_target_texture<'a>(
-        &mut self,
-        rwp: &mut RenderWindowParts<'a>,
-    ) -> Option<Texture<Resources>>
-    {
-        // creates a render target texture based on the current size of the
-        // client window
-
-        rwp.window
-            .window
-            .get_inner_size()
-            .map(|lz| (lz.width as u32, lz.height as u32))
-            .map(|(w, h)| {
-                let zero_image = ImageBuffer::new(w, h);
-
-                Texture::from_image(
-                    rwp.tex_ctx,
-                    &zero_image,
-                    &TextureSettings::new(),
-                )
-                .unwrap()
-            })
-    }
-
     fn render_lanes<'a>(
         self,
         rwp: &mut RenderWindowParts<'a>,
-        lanes_texture: Texture<Resources>,
-        lasers_texture: Texture<Resources>,
     )
     {
         // the amount of the laser, starting from the judgment line, that will
         // be shown to the player, since the notes and the lasers fall at
         // different speeds.
-        //
         // the lower the value, the faster the lasers will fall
         const LASER_CUTOFF: f32 = 0.95;
 
@@ -178,8 +122,14 @@ impl LGRenderDetails {
             vbuf: self.vbuf,
             out_color: self.color_target,
             transform: (*self.transform).clone().into(),
-            lanes_texture: (lanes_texture.view, lanes_texture.sampler),
-            lasers_texture: (lasers_texture.view, lasers_texture.sampler),
+            lanes_texture: (
+                self.lanes_texture.view,
+                self.lanes_texture.sampler,
+            ),
+            lasers_texture: (
+                self.laser_texture.view,
+                self.laser_texture.sampler,
+            ),
             lasers_cutoff: LASER_CUTOFF,
         };
 
@@ -193,62 +143,35 @@ impl RenderDetails for LGRenderDetails {
         rwp: &mut RenderWindowParts<'a>,
     )
     {
-        // create a texture which will be utilized as a render target to render
-        // the lanes and everything on
-        // NOTE: if a None is returned instead of a Some, it's a rare case of
-        // this function being called while the window has already been closed.
-        // Just simply do not continue any further if it is encountered.
-        let lane_texture = match self.create_render_target_texture(rwp) {
-            Some(lt) => lt,
-            None => return,
-        };
-
-        // and another one for the lasers
-        let laser_texture = match self.create_render_target_texture(rwp) {
-            Some(lt) => lt,
-            None => return,
-        };
-
         // bottom to top, this is the ordering of render:
         // Lanes -> FX Hold -> BT Hold -> FX Chip -> BT Chip -> Laser
 
         // render the lanes
-        block_fn(|| (&mut self.lanes).wait());
-        .render(factory, g2d, &render_targetlane_texture.view, output_stencil);
+        block_fn(|| (&mut self.lanes).wait()).unwrap().render(rwp);
 
         // render the fx holds
-        block_fn(|| (&mut self.fx_holds).wait());
-        // .render(factory, g2d, &render_targetlane_texture.view,
-        // output_stencil);
+        //block_fn(|| (&mut self.fx_holds).wait());
 
         // render the bt holds
-        block_fn(|| (&mut self.bt_holds).wait());
-        // .render(factory, g2d, &render_targetlane_texture.view,
-        // output_stencil);
+        //block_fn(|| (&mut self.bt_holds).wait());
 
         // render the fx chips
-        block_fn(|| (&mut self.fx_chips).wait());
-        // .render(factory, g2d, &render_targetlane_texture.view,
-        // output_stencil);
+        //block_fn(|| (&mut self.fx_chips).wait());
 
         // render the bt chips
-        block_fn(|| (&mut self.bt_chips).wait());
-        // .render(factory, g2d, &render_targetlane_texture.view,
-        // output_stencil);
+        //block_fn(|| (&mut self.bt_chips).wait());
 
         // render the lasers
-        block_fn(|| (&mut self.lasers).wait());
-        // .render(factory, g2d, &laser_texture.view, output_stencil);
+        //block_fn(|| (&mut self.lasers).wait());
 
         // then finally utilize the render target as a texture of a rectangle,
         // which would then be rendered on the screen
-        self.render_lanes(rwp, lane_texture, laser_texture);
+        self.render_lanes(rwp);
     }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-#[derive(Debug)]
 pub struct LGInitRequest {
     // keyframes
     rotation_events: Vec<(SongTime, Keyframe<TransformationKFCurve>)>,
@@ -259,22 +182,31 @@ pub struct LGInitRequest {
 }
 
 impl LGInitRequest {
-    pub fn debug_new() -> LGInitRequest {
-        LGInitRequest::with_rsz(vec![], vec![], vec![])
+    pub fn debug_new(
+        tx: &mut UnboundedSender<UpdateEnvelope>,
+        sender: TPSender,
+    ) -> LGInitRequest
+    {
+        LGInitRequest::with_rsz(vec![], vec![], vec![], tx, sender)
     }
 
     // the payload must be able to reach here
     fn with_rsz(
         rotation_events: Vec<(SongTime, Keyframe<TransformationKFCurve>)>,
-        slant_events:    Vec<(SongTime, Keyframe<TransformationKFCurve>)>,
-        zoom_events:     Vec<(SongTime, Keyframe<TransformationKFCurve>)>,
-    ) -> LGInitRequest {
-        // send all the initialization requests
-        let (env, rx) = self.wrap();
-        tx.unbounded_send(env);
+        slant_events: Vec<(SongTime, Keyframe<TransformationKFCurve>)>,
+        zoom_events: Vec<(SongTime, Keyframe<TransformationKFCurve>)>,
+        tx: &mut UnboundedSender<UpdateEnvelope>,
+        sender: TPSender,
+    ) -> LGInitRequest
+    {
+        // NOTE: at this point in time, the execution of this function is in one
+        // of the children actors so it is safe to call this
 
-        // receive all the initialization requests
-        let lanes = block_fn(|| rx.wait());
+        // send all the initialization requests
+        let lanes = LanesInitRequest::debug_new()
+            .send_then_receive(tx)
+            .unwrap() // unwrap a canceled
+            .start_actor(Default::default(), sender);
 
         LGInitRequest {
             rotation_events,
@@ -284,16 +216,50 @@ impl LGInitRequest {
             lanes,
         }
     }
+
+    fn create_render_target_texture<'a>(
+        &mut self,
+        uwp: &mut UpdateWindowParts<'a>,
+    ) -> Option<Texture<Resources>>
+    {
+        // creates a render target texture based on the current size of the
+        // client window
+
+        uwp.window
+            .window
+            .get_inner_size()
+            .map(|lz| (lz.width as u32, lz.height as u32))
+            .map(|(w, h)| {
+                let zero_image = ImageBuffer::new(w, h);
+
+                Texture::from_image(
+                    uwp.tex_ctx,
+                    &zero_image,
+                    &TextureSettings::new(),
+                )
+                .unwrap()
+            })
+    }
 }
 
 impl CanBeWindowHandled for LGInitRequest {
-    type Response = LaneGovernor;
+    type Response = Option<LaneGovernor>;
 
     fn handle<'a>(
         self,
         uwp: &mut UpdateWindowParts<'a>,
     ) -> Self::Response
     {
+        let lanes_texture = match self.create_render_target_texture(uwp) {
+            Some(tex) => tex,
+            None => return None,
+        };
+
+        let laser_texture = match self.create_render_target_texture(uwp) {
+            Some(tex) => tex,
+            None => return None,
+        };
+
         let (vbuf, slice) = {
             // declare the vertices of the square of the lanes
             let vertices = vec![[-1., -1.], [1., -1.], [1., 1.], [-1., 1.]]
@@ -336,7 +302,7 @@ impl CanBeWindowHandled for LGInitRequest {
             )
             .unwrap();
 
-        LaneGovernor {
+        Some(LaneGovernor {
             // keyframes
             rotation_events: self.rotation_events,
             slant_events: self.slant_events,
@@ -345,19 +311,20 @@ impl CanBeWindowHandled for LGInitRequest {
             // current spin
             current_spin: None,
 
+            lanes_texture,
+            laser_texture,
+
             lanes: self.lanes,
 
             pipeline,
             vbuf,
             slice,
-        }
+        })
     }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-// TODO: maybe this should be an actor too since it handles renders and inputs?
-#[derive(Debug)]
 pub struct LaneGovernor {
     // keyframes
     rotation_events: Vec<(SongTime, Keyframe<TransformationKFCurve>)>,
@@ -365,13 +332,22 @@ pub struct LaneGovernor {
     zoom_events:     Vec<(SongTime, Keyframe<TransformationKFCurve>)>,
 
     // current spin
+    // this will only have a value if an input that corresponds to the
+    // activation of a slam that has a spin is recognized
     current_spin: Option<Spin>,
+
     // at this point, we have the drawable assets. they will be needing the
     // matrix provided to them by the calculate_matrix()
     lanes: WrappedAddr<Lanes>,
-    // notes: Bt,
-    // fx: Fx,
-    // lasers: Lasers,
+
+    // notes: WrappedAddr<Bt>,
+    // fx: WrappedAddr<Fx>,
+    // lasers: WrappedAddr<Lasers>,
+
+    // these will serve as render targets and are not intended to contain any
+    // fixed texture whatsoever
+    lanes_texture: Texture<Resources>,
+    laser_texture: Texture<Resources>,
 
     pipeline: PipelineState<Resources, LaneGovernorRenderPipeline::Meta>,
     vbuf:     Buffer<Resources, Corner>,
@@ -610,24 +586,36 @@ impl RenderableActorWrapper for LaneGovernor {
             payload.get_time().song_time.clone().unwrap_or(SongTime(0));
         let transform = Arc::new(self.calculate_matrix(&song_time));
 
+        // declare the payloads. these will be useful.
+        // TODO: you need to have the texture AND the target view initialized
+        // during the update
+        let lanes_payload = RenderPayload {
+            color_target: self.lanes_texture.surface.clone(),
+            ..payload.clone()
+        };
+
+        let laser_payload = RenderPayload {
+            color_target: self.laser_texture.surface.clone(),
+            ..payload.clone()
+        };
+
+        // send the payloads to the respective actors
+        let lanes = self.lanes.send(lanes_payload);
+
         // declare the render details here
-        let (details, lanes, chip_bt, hold_bt, chip_fx, hold_fx, lasers) =
-            LGRenderDetails::new(
-                payload.clone(),
-                transform.clone(),
-                self.pipeline.clone(),
-                self.vbuf.clone(),
-                self.slice.clone(),
-            );
-
-        // then send the render request using all the tx above
-        let mut lanes_payload = payload.clone();
-
-        // we need to somehow declare the textures in here so we get to send
-        // the view as a payload to the lanes
-        unimplemented!();
-        
-        lanes.send();
+        let details = LGRenderDetails {
+            transform,
+            lanes,
+            // lasers,
+            // bt,
+            // fx,
+            pipeline: self.pipeline.clone(),
+            vbuf: self.vbuf.clone(),
+            slice: self.slice.clone(),
+            lanes_texture: self.lanes_texture.clone(),
+            laser_texture: self.laser_texture.clone(),
+            color_target: payload.color_target.clone(),
+        };
 
         details
     }

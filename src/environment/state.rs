@@ -14,10 +14,13 @@ use crate::{
             BindRoles,
             ComposedKeystroke,
         },
-        RenderWindowParts,
         update_routine::CanBeWindowHandled as _,
+        RenderWindowParts,
     },
-    song_player::governor::{LGInitRequest, LaneGovernor},
+    song_player::governor::{
+        LGInitRequest,
+        LaneGovernor,
+    },
 };
 use bidir_map::BidirMap;
 use futures::future::Future as _;
@@ -66,7 +69,6 @@ impl ActorWrapper for GameState {
                     payload.game_time.instant.clone(),
                 ));
             }
-
             else {
                 self.buttons_pressed.retain(|x| x.0 != b.button);
             }
@@ -78,9 +80,13 @@ impl ActorWrapper for GameState {
             Uninitialized => {
                 // if not initialized yet, initialize to the song state
                 // TODO: we don't initialize to the song state too fast.
-                let lg_addr = LGInitRequest::debug_new()
+                let lg_addr = LGInitRequest::debug_new(
+                        &mut payload.tx,
+                        ctx.threadpool().clone(),
+                    )
                     .send_then_receive(&mut payload.tx)
-                    .unwrap()
+                    .unwrap() // can't be cancelled
+                    .unwrap() // idk what this is
                     .start_actor(Default::default(), ctx.threadpool().clone());
 
                 self.state = Song(lg_addr);
