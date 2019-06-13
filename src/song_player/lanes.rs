@@ -30,7 +30,7 @@ use gfx_graphics::{
     TextureSettings,
 };
 use image::{
-    DynamicImage,
+    RgbaImage,
     ImageResult,
 };
 use shader_version::{
@@ -41,20 +41,23 @@ use shader_version::{
 ////////////////////////////////////////////////////////////////////////////////
 
 pub struct LanesInitRequest {
-    pub lane_image: DynamicImage,
+    pub lane_image: RgbaImage,
 }
 
 impl LanesInitRequest {
     pub fn new(img_buf: &[u8]) -> ImageResult<LanesInitRequest> {
-        image::load_from_memory(img_buf).map(|lane_image| {
-            LanesInitRequest {
-                lane_image,
-            }
-        })
+        image::load_from_memory(img_buf)
+            .map(|lane_image| lane_image.to_rgba())
+            .map(|lane_image| {
+                LanesInitRequest {
+                    lane_image,
+                }
+            })
     }
 
-    pub fn debug_new() -> LanesInitRequest {
-        LanesInitRequest::new(unimplemented!()).unwrap()
+    pub fn debug_new() -> ImageResult<LanesInitRequest> {
+        let lane_tex = include_bytes!("../../build_assets/lane_texture.png");
+        LanesInitRequest::new(lane_tex)
     }
 
     fn create_texture_buffer<'a>(
@@ -64,7 +67,7 @@ impl LanesInitRequest {
     {
         Texture::from_image(
             &mut uwp.tex_ctx,
-            &self.lane_image.to_rgba(),
+            &self.lane_image,
             &TextureSettings::new(),
         )
         .unwrap()

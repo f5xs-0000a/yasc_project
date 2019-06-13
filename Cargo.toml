@@ -28,7 +28,7 @@
     viewport = { git = "https://github.com/f5xs-0000a/viewport.git" }
 
     # MULTITHREADING
-    sekibanki = { git = "https://github.com/f5xs-0000a/sekibanki.git" }
+    sekibanki = { path = "../../sekibanki/" }
     tokio-threadpool = "*"
     futures = "0.1.26" # align with sekibanki's version
 

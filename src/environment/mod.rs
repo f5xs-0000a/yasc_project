@@ -55,7 +55,7 @@ use piston_window::{
 };
 use shader_version::glsl::GLSL;
 use std::time::Instant;
-use tokio_threadpool::ThreadPool;
+use tokio_threadpool::{ThreadPool, Builder as TPBuilder};
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -87,7 +87,9 @@ impl GamePrelude {
         use piston_window::WindowSettings;
 
         // create the threadpool
-        let threadpool = ThreadPool::new();
+        let threadpool = TPBuilder::new()
+            .panic_handler(|err| std::panic::resume_unwind(err))
+            .build();
 
         // declare which version of opengl to use
         //let opengl = piston_window::OpenGL::V3_3;
@@ -213,6 +215,7 @@ impl GamePrelude {
             for select in waitable {
                 match select {
                     Ok(A(env)) => {
+                        dbg!(());
                         env.handle(&mut uwp);
                     },
 
@@ -220,7 +223,10 @@ impl GamePrelude {
                         break;
                     },
 
-                    Err(_) => unreachable!(),
+                    Err(e) => {
+                        dbg!(e);
+                        unreachable!();
+                    },
                 }
             }
         }

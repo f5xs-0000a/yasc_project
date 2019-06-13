@@ -1,20 +1,12 @@
 #version 330
 
-layout (location = 0) in vec2 vertex_pos;
-layout (location = 1) in float texture_coord;
+in vec2 into_frag_tex_coord;
 
-uniform mat4 transform;
+uniform sampler2D raster_texture;
 
-out float into_frag_tex_coord;
+out vec4 color;
 
 void main() {
-    vec4 padded_vec = vec4(
-        vertex_pos,
-        0.,
-        1.
-    );
-
-    into_frag_tex_coord = texture_coord;
-
-    gl_Position = transform * padded_vec;
+    vec4 lanes_tex = texture(raster_texture, into_frag_tex_coord);
+    color = lanes_tex;
 }

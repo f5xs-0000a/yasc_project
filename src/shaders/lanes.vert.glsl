@@ -1,11 +1,9 @@
 #version 330
 
 layout (location = 0) in vec2 vertex_pos;
-layout (location = 1) in float texture_coord;
+layout (location = 1) in vec2 texture_coord;
 
-uniform mat4 transform;
-
-out float into_frag_tex_coord;
+out vec2 into_frag_tex_coord;
 
 void main() {
     vec4 padded_vec = vec4(
@@ -16,5 +14,5 @@ void main() {
 
     into_frag_tex_coord = texture_coord;
 
-    gl_Position = transform * padded_vec;
+    gl_Position = padded_vec;
 }

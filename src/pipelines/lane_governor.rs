@@ -13,7 +13,7 @@ gfx_pipeline!( LaneGovernorRenderPipeline {
 
     // the name must be the same as declared in the shaders
     lanes_texture: gfx::TextureSampler<[f32; 4]> = "lanes_texture",
-    lasers_texture: gfx::TextureSampler<[f32; 4]> = "lasers_texture",
+    lasers_texture: gfx::TextureSampler<[f32; 4]> = "laser_texture",
 
     lasers_cutoff: gfx::Global<f32> = "laser_cutoff",
 });

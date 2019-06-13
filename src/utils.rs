@@ -40,6 +40,7 @@ use std::ops::{
 
 ////////////////////////////////////////////////////////////////////////////////
 
+#[derive(Debug, Clone)]
 pub struct TextureWithTarget {
     pub tex: Texture<Resources, R8_G8_B8_A8>,
     pub srv: ShaderResourceView<Resources, Vec4<f32>>,

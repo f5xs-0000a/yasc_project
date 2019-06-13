@@ -43,7 +43,7 @@ impl GameState {
         GameState {
             // TODO: should be read from a config file
             keybindings: BindRoles::default_keyboard_binding(),
-            state: StateEnum::TitleScreen,
+            state: StateEnum::Uninitialized,
             buttons_pressed: Vec::with_capacity(8),
         }
     }
@@ -146,13 +146,7 @@ impl RenderDetails for GameStateRenderDetails {
 
         match self {
             Song(response) => {
-                match response.wait() {
-                    Ok(r) => r.render(rwp),
-                    _ => {}, /* response is cancelled, so we just don't
-                              * render
-                              * TODO: we might want to match that and log the
-                              * result */
-                }
+                response.map(|r| r.render(rwp)).wait();
             },
             _ => {}, // unimplemented
         }

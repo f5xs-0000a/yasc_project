@@ -29,7 +29,7 @@ use crate::{
         },
         song_timer::SongTime,
     },
-    utils::block_fn,
+    utils::{TextureWithTarget, block_fn},
 };
 use camera_controllers::FirstPerson;
 use cgmath::{
@@ -97,8 +97,8 @@ pub struct LGRenderDetails {
     // these textures will have color target handles borrowed and sent to the
     // children actors so they could write on them. it is important to wait for
     // them to finish before using these
-    pub lanes_texture: Texture<Resources>,
-    pub laser_texture: Texture<Resources>,
+    pub lanes_texture: TextureWithTarget,
+    pub laser_texture: TextureWithTarget,
 
     // this will be the color target that will be drawn on and it will come
     // from the payload
@@ -123,11 +123,11 @@ impl LGRenderDetails {
             out_color: self.color_target,
             transform: (*self.transform).clone().into(),
             lanes_texture: (
-                self.lanes_texture.view,
+                self.lanes_texture.srv,
                 self.lanes_texture.sampler,
             ),
             lasers_texture: (
-                self.laser_texture.view,
+                self.laser_texture.srv,
                 self.laser_texture.sampler,
             ),
             lasers_cutoff: LASER_CUTOFF,
@@ -147,7 +147,7 @@ impl RenderDetails for LGRenderDetails {
         // Lanes -> FX Hold -> BT Hold -> FX Chip -> BT Chip -> Laser
 
         // render the lanes
-        block_fn(|| (&mut self.lanes).wait()).unwrap().render(rwp);
+        (&mut self.lanes).wait().unwrap().render(rwp);
 
         // render the fx holds
         //block_fn(|| (&mut self.fx_holds).wait());
@@ -204,6 +204,7 @@ impl LGInitRequest {
 
         // send all the initialization requests
         let lanes = LanesInitRequest::debug_new()
+            .unwrap()
             .send_then_receive(tx)
             .unwrap() // unwrap a canceled
             .start_actor(Default::default(), sender);
@@ -220,7 +221,7 @@ impl LGInitRequest {
     fn create_render_target_texture<'a>(
         &mut self,
         uwp: &mut UpdateWindowParts<'a>,
-    ) -> Option<Texture<Resources>>
+    ) -> Option<TextureWithTarget>
     {
         // creates a render target texture based on the current size of the
         // client window
@@ -228,16 +229,12 @@ impl LGInitRequest {
         uwp.window
             .window
             .get_inner_size()
-            .map(|lz| (lz.width as u32, lz.height as u32))
+            .map(|lz| (lz.width as u16, lz.height as u16))
             .map(|(w, h)| {
-                let zero_image = ImageBuffer::new(w, h);
-
-                Texture::from_image(
-                    uwp.tex_ctx,
-                    &zero_image,
-                    &TextureSettings::new(),
+                TextureWithTarget::new(
+                    w, h,
+                    &mut uwp.tex_ctx.factory
                 )
-                .unwrap()
             })
     }
 }
@@ -246,7 +243,7 @@ impl CanBeWindowHandled for LGInitRequest {
     type Response = Option<LaneGovernor>;
 
     fn handle<'a>(
-        self,
+        mut self,
         uwp: &mut UpdateWindowParts<'a>,
     ) -> Self::Response
     {
@@ -346,8 +343,8 @@ pub struct LaneGovernor {
 
     // these will serve as render targets and are not intended to contain any
     // fixed texture whatsoever
-    lanes_texture: Texture<Resources>,
-    laser_texture: Texture<Resources>,
+    lanes_texture: TextureWithTarget,
+    laser_texture: TextureWithTarget,
 
     pipeline: PipelineState<Resources, LaneGovernorRenderPipeline::Meta>,
     vbuf:     Buffer<Resources, Corner>,
@@ -589,15 +586,11 @@ impl RenderableActorWrapper for LaneGovernor {
         // declare the payloads. these will be useful.
         // TODO: you need to have the texture AND the target view initialized
         // during the update
-        let lanes_payload = RenderPayload {
-            color_target: self.lanes_texture.surface.clone(),
-            ..payload.clone()
-        };
+        let mut lanes_payload = payload.clone();
+        lanes_payload.color_target = self.lanes_texture.rtv.clone();
 
-        let laser_payload = RenderPayload {
-            color_target: self.laser_texture.surface.clone(),
-            ..payload.clone()
-        };
+        let mut laser_payload = payload.clone();
+        laser_payload.color_target = self.laser_texture.rtv.clone();
 
         // send the payloads to the respective actors
         let lanes = self.lanes.send(lanes_payload);
