@@ -29,7 +29,10 @@ use crate::{
         },
         song_timer::SongTime,
     },
-    utils::{TextureWithTarget, block_fn},
+    utils::{
+        block_fn,
+        TextureWithTarget,
+    },
 };
 use camera_controllers::FirstPerson;
 use cgmath::{
@@ -122,10 +125,7 @@ impl LGRenderDetails {
             vbuf: self.vbuf,
             out_color: self.color_target,
             transform: (*self.transform).clone().into(),
-            lanes_texture: (
-                self.lanes_texture.srv,
-                self.lanes_texture.sampler,
-            ),
+            lanes_texture: (self.lanes_texture.srv, self.lanes_texture.sampler),
             lasers_texture: (
                 self.laser_texture.srv,
                 self.laser_texture.sampler,
@@ -231,10 +231,7 @@ impl LGInitRequest {
             .get_inner_size()
             .map(|lz| (lz.width as u16, lz.height as u16))
             .map(|(w, h)| {
-                TextureWithTarget::new(
-                    w, h,
-                    &mut uwp.tex_ctx.factory
-                )
+                TextureWithTarget::new(w, h, &mut uwp.tex_ctx.factory)
             })
     }
 }

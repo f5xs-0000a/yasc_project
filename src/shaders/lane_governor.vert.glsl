@@ -26,8 +26,9 @@ float linear_map(
 // space, we need a function that maps the vertex space to texture space (which
 // is just a two-dimensional linear map)
 vec2 vert_to_tex_mapper(vec2 pos) {
-    pos[0] = linear_map(pos[0], -1., 1., 0., 1.);
-    pos[1] = linear_map(pos[1], -1., 1., 0., 1.);
+    // XXX: This is not supposed to be mapped like this!
+    pos[0] = linear_map(pos[0], -1., 1., 0.5, 1.);
+    pos[1] = linear_map(pos[1], -1., 1., 0.5, 1.);
 
     return pos;
 }

@@ -39,6 +39,7 @@ use gfx::{
 };
 use gfx_device_gl::{
     CommandBuffer,
+    Device,
     Factory,
     Resources,
 };
@@ -47,7 +48,10 @@ use gfx_graphics::{
     TextureContext,
 };
 use glutin_window::GlutinWindow;
-use piston::event_loop::EventLoop as _;
+use piston::{
+    event_loop::EventLoop as _,
+    window::OpenGLWindow as _,
+};
 use piston_window::{
     Events,
     Input,
@@ -55,7 +59,10 @@ use piston_window::{
 };
 use shader_version::glsl::GLSL;
 use std::time::Instant;
-use tokio_threadpool::{ThreadPool, Builder as TPBuilder};
+use tokio_threadpool::{
+    Builder as TPBuilder,
+    ThreadPool,
+};
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -64,6 +71,7 @@ pub struct GamePrelude {
 
     // we just extracted the fields of PistonWindow here and wrap some of them
     window:  GlutinWindow,
+    device:  Device,
     events:  Events,
     tex_ctx: TextureContext<Factory, Resources, CommandBuffer>,
 
@@ -91,9 +99,6 @@ impl GamePrelude {
             .panic_handler(|err| std::panic::resume_unwind(err))
             .build();
 
-        // declare which version of opengl to use
-        //let opengl = piston_window::OpenGL::V3_3;
-
         // we'll be changing the samples, and vsync soon using settings
         // declare the window
         let pistonwindow: PistonWindow =
@@ -104,12 +109,14 @@ impl GamePrelude {
                 .build()
                 .expect("Failed to create Piston window");
 
+        // take out everything from the window
         let output_color = pistonwindow.output_color;
         let output_stencil = pistonwindow.output_stencil;
         let events = pistonwindow.events.ups(180).max_fps(120).lazy(false);
         let window = pistonwindow.window;
         let g2d = pistonwindow.g2d;
         let shdr_ver = GLSL::V3_30;
+        let device = pistonwindow.device;
         let tex_ctx = TextureContext {
             factory: pistonwindow.factory,
             encoder: pistonwindow.encoder,
@@ -124,6 +131,7 @@ impl GamePrelude {
             threadpool,
 
             window,
+            device,
             output_color,
             output_stencil,
             events,
@@ -215,7 +223,6 @@ impl GamePrelude {
             for select in waitable {
                 match select {
                     Ok(A(env)) => {
-                        dbg!(());
                         env.handle(&mut uwp);
                     },
 
@@ -237,6 +244,13 @@ impl GamePrelude {
     }
 
     fn render_procedure(&mut self) {
+        // this segment is just PistonWindow::draw_3d() but repurposed
+
+        self.window.make_current();
+
+        // clear window to black
+        self.tex_ctx.encoder.clear(&self.output_color, [0., 0., 0., 1.]);
+
         let payload = RenderPayload::new(
             (),
             self.get_game_time(),
@@ -251,6 +265,8 @@ impl GamePrelude {
                 response.render(&mut RenderWindowParts::from_game_prelude(self))
             })
             .wait();
+
+        self.tex_ctx.encoder.flush(&mut self.device);
     }
 }
 

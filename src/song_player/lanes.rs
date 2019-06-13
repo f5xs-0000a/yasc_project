@@ -30,8 +30,8 @@ use gfx_graphics::{
     TextureSettings,
 };
 use image::{
-    RgbaImage,
     ImageResult,
+    RgbaImage,
 };
 use shader_version::{
     glsl::GLSL,
